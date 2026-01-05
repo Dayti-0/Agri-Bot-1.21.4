@@ -1,0 +1,146 @@
+{
+    "log_path": "C:\\Users\\Nix\\AppData\\Roaming\\.minecraft\\logs\\latest.log",
+    "plant_settings": {
+        "plant_type": "Brocoli",
+        "growth_time": 20040,
+        "growth_boost": 29.0,
+        "description": "Le clic de récolte est déterminé automatiquement selon la plante"
+    },
+    "session_pause": 20040,
+    "session_pause_description": "Temps d'attente en secondes entre les sessions (900 = 15 minutes)",
+    "delays": {
+        "short": 0.3,
+        "medium": 0.8,
+        "long": 1.5,
+        "human_variation": 0.25,
+        "startup_delay": 5.0,
+        "description": "Délais en secondes - augmentez si le bot va trop vite"
+    },
+    "positions": {
+        "server_connect": {
+            "x": 580,
+            "y": 317,
+            "description": "Position du serveur dans la liste"
+        },
+        "server_confirm": {
+            "x": 957,
+            "y": 475,
+            "description": "Position pour confirmer la connexion"
+        },
+        "disconnect": {
+            "x": 963,
+            "y": 797,
+            "description": "Position du bouton déconnexion"
+        },
+        "default_harvest": {
+            "x": 956,
+            "y": 392,
+            "description": "Position par défaut pour récolter"
+        },
+        "bucket_chest": {
+            "x": 744,
+            "y": 364,
+            "description": "Position des seaux dans le coffre"
+        }
+    },
+    "stations": [
+        {
+            "name": "coldocean",
+            "harvest_pos": null
+        },
+        {
+            "name": "coldoocean",
+            "harvest_pos": null
+        },
+        {
+            "name": "lukwarm",
+            "harvest_pos": null
+        },
+        {
+            "name": "lukwarmm",
+            "harvest_pos": null
+        },
+        {
+            "name": "warmocean",
+            "harvest_pos": null
+        },
+        {
+            "name": "river",
+            "harvest_pos": null
+        },
+        {
+            "name": "frozenriver",
+            "harvest_pos": null
+        },
+        {
+            "name": "oceanfrozen",
+            "harvest_pos": null
+        },
+        {
+            "name": "riverfrozen",
+            "harvest_pos": null
+        },
+        {
+            "name": "beach",
+            "harvest_pos": null
+        },
+        {
+            "name": "snownybeach",
+            "harvest_pos": null
+        },
+        {
+            "name": "stonyshore",
+            "harvest_pos": null
+        },
+        {
+            "name": "sunflower",
+            "harvest_pos": null
+        },
+        {
+            "name": "sunflowerplains",
+            "harvest_pos": null
+        },
+        {
+            "name": "gianttreetaiga",
+            "harvest_pos": null
+        },
+        {
+            "name": "sprucetaiga",
+            "harvest_pos": null
+        },
+        {
+            "name": "jungleedge",
+            "harvest_pos": null
+        },
+        {
+            "name": "spectrejungle",
+            "harvest_pos": null
+        },
+        {
+            "name": "spectreedge",
+            "harvest_pos": null
+        },
+        {
+            "name": "woodforest",
+            "harvest_pos": null
+        },
+        {
+            "name": "woodforestt",
+            "harvest_pos": null
+        },
+        {
+            "name": "spectrewood",
+            "harvest_pos": null
+        }
+    ],
+    "homes_special": {
+        "coffre1": "coffre1",
+        "coffre2": "coffre2",
+        "description": "Homes spéciaux pour la gestion des seaux"
+    },
+    "auto_reply": {
+        "enabled": true,
+        "pseudo": "Dayti",
+        "description": "Paramètres pour l'auto-réponse avec Mistral AI"
+    }
+}
