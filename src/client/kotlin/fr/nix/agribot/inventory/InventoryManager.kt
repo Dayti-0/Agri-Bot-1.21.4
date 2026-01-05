@@ -5,6 +5,15 @@ import net.minecraft.item.Items
 import org.slf4j.LoggerFactory
 
 /**
+ * Donnees d'un slot contenant des seaux.
+ */
+data class BucketSlotInfo(
+    val slotIndex: Int,
+    val count: Int,
+    val isFull: Boolean  // true = seaux d'eau, false = seaux vides
+)
+
+/**
  * Gestionnaire d'inventaire pour la hotbar.
  */
 object InventoryManager {
@@ -29,22 +38,10 @@ object InventoryManager {
     }
 
     /**
-     * Selectionne le slot 1 (index 0) - generalement les graines.
+     * Selectionne le slot des graines (slot 9 = touche 0).
      */
     fun selectSeedsSlot() {
-        selectSlot(9) // Slot 0 = touche 0 dans le jeu (10eme slot visuel)
-    }
-
-    /**
-     * Selectionne le slot des seaux (1 ou 2 selon la config).
-     * @param slotNumber 1 ou 2
-     */
-    fun selectBucketSlot(slotNumber: Int) {
-        when (slotNumber) {
-            1 -> selectSlot(0) // Premier slot
-            2 -> selectSlot(1) // Deuxieme slot
-            else -> selectSlot(0)
-        }
+        selectSlot(9)
     }
 
     /**
@@ -73,54 +70,116 @@ object InventoryManager {
     }
 
     /**
-     * Compte le nombre de seaux d'eau dans la hotbar.
+     * Verifie si le slot actuel contient un seau (plein ou vide).
      */
-    fun countWaterBucketsInHotbar(): Int {
-        val player = client.player ?: return 0
-        var count = 0
+    fun isHoldingAnyBucket(): Boolean {
+        return isHoldingWaterBucket() || isHoldingEmptyBucket()
+    }
+
+    /**
+     * Trouve tous les slots contenant des seaux d'eau dans la hotbar.
+     * @return Liste des slots avec seaux d'eau (tries par index)
+     */
+    fun findWaterBucketSlots(): List<BucketSlotInfo> {
+        val player = client.player ?: return emptyList()
+        val result = mutableListOf<BucketSlotInfo>()
 
         for (i in 0..8) {
             val stack = player.inventory.getStack(i)
             if (stack.item == Items.WATER_BUCKET) {
-                count += stack.count
+                result.add(BucketSlotInfo(i, stack.count, isFull = true))
             }
         }
 
-        return count
+        return result
     }
 
     /**
-     * Compte le nombre de seaux vides dans la hotbar.
+     * Trouve tous les slots contenant des seaux vides dans la hotbar.
+     * @return Liste des slots avec seaux vides (tries par index)
      */
-    fun countEmptyBucketsInHotbar(): Int {
-        val player = client.player ?: return 0
-        var count = 0
+    fun findEmptyBucketSlots(): List<BucketSlotInfo> {
+        val player = client.player ?: return emptyList()
+        val result = mutableListOf<BucketSlotInfo>()
 
         for (i in 0..8) {
             val stack = player.inventory.getStack(i)
             if (stack.item == Items.BUCKET) {
-                count += stack.count
+                result.add(BucketSlotInfo(i, stack.count, isFull = false))
             }
         }
 
-        return count
+        return result
     }
 
     /**
-     * Compte le nombre total de seaux (pleins + vides) dans un slot specifique.
-     * @param slot Index du slot (0-8)
+     * Trouve tous les slots contenant des seaux (pleins ou vides) dans la hotbar.
+     * @return Liste des slots avec seaux (tries par index)
      */
-    fun countBucketsInSlot(slot: Int): Int {
-        val player = client.player ?: return 0
+    fun findAllBucketSlots(): List<BucketSlotInfo> {
+        val player = client.player ?: return emptyList()
+        val result = mutableListOf<BucketSlotInfo>()
 
-        if (slot !in 0..8) return 0
-
-        val stack = player.inventory.getStack(slot)
-        return if (stack.item == Items.WATER_BUCKET || stack.item == Items.BUCKET) {
-            stack.count
-        } else {
-            0
+        for (i in 0..8) {
+            val stack = player.inventory.getStack(i)
+            when (stack.item) {
+                Items.WATER_BUCKET -> result.add(BucketSlotInfo(i, stack.count, isFull = true))
+                Items.BUCKET -> result.add(BucketSlotInfo(i, stack.count, isFull = false))
+            }
         }
+
+        return result
+    }
+
+    /**
+     * Trouve le premier slot contenant un seau d'eau et le selectionne.
+     * @return true si un slot a ete trouve et selectionne, false sinon
+     */
+    fun selectFirstWaterBucketSlot(): Boolean {
+        val slots = findWaterBucketSlots()
+        if (slots.isNotEmpty()) {
+            selectSlot(slots.first().slotIndex)
+            logger.info("Slot seau d'eau selectionne: ${slots.first().slotIndex + 1}")
+            return true
+        }
+        logger.warn("Aucun seau d'eau trouve dans la hotbar")
+        return false
+    }
+
+    /**
+     * Trouve le premier slot contenant un seau vide et le selectionne.
+     * @return true si un slot a ete trouve et selectionne, false sinon
+     */
+    fun selectFirstEmptyBucketSlot(): Boolean {
+        val slots = findEmptyBucketSlots()
+        if (slots.isNotEmpty()) {
+            selectSlot(slots.first().slotIndex)
+            logger.info("Slot seau vide selectionne: ${slots.first().slotIndex + 1}")
+            return true
+        }
+        logger.warn("Aucun seau vide trouve dans la hotbar")
+        return false
+    }
+
+    /**
+     * Compte le nombre total de seaux d'eau dans la hotbar.
+     */
+    fun countWaterBucketsInHotbar(): Int {
+        return findWaterBucketSlots().sumOf { it.count }
+    }
+
+    /**
+     * Compte le nombre total de seaux vides dans la hotbar.
+     */
+    fun countEmptyBucketsInHotbar(): Int {
+        return findEmptyBucketSlots().sumOf { it.count }
+    }
+
+    /**
+     * Compte le nombre total de seaux (pleins + vides) dans la hotbar.
+     */
+    fun countAllBucketsInHotbar(): Int {
+        return countWaterBucketsInHotbar() + countEmptyBucketsInHotbar()
     }
 
     /**
@@ -137,5 +196,13 @@ object InventoryManager {
         val player = client.player ?: return "none"
         val heldItem = player.inventory.mainHandStack
         return heldItem.item.toString()
+    }
+
+    /**
+     * Recupere le nombre d'items dans le slot actuel.
+     */
+    fun getHeldItemCount(): Int {
+        val player = client.player ?: return 0
+        return player.inventory.mainHandStack.count
     }
 }

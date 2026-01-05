@@ -15,8 +15,7 @@ import net.minecraft.text.Text
 class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
 
     private val stationFields = mutableListOf<TextFieldWidget>()
-    private lateinit var coffreRecupField: TextFieldWidget
-    private lateinit var coffreDropField: TextFieldWidget
+    private lateinit var coffreField: TextFieldWidget
     private lateinit var plantField: TextFieldWidget
     private lateinit var boostField: TextFieldWidget
 
@@ -45,20 +44,14 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
         boostField.setMaxLength(5)
         addDrawableChild(boostField)
 
-        // === Section Coffres ===
+        // === Section Coffre ===
         val coffreY = startY + 30
 
-        // Coffre Recup (pour recuperer les seaux apres 11h30)
-        coffreRecupField = TextFieldWidget(textRenderer, centerX - 150, coffreY, 140, 20, Text.literal("Coffre Recup"))
-        coffreRecupField.text = config.homeCoffre1
-        coffreRecupField.setMaxLength(30)
-        addDrawableChild(coffreRecupField)
-
-        // Coffre Drop (pour jeter les seaux le matin)
-        coffreDropField = TextFieldWidget(textRenderer, centerX + 10, coffreY, 140, 20, Text.literal("Coffre Drop"))
-        coffreDropField.text = config.homeCoffre2
-        coffreDropField.setMaxLength(30)
-        addDrawableChild(coffreDropField)
+        // Home coffre pour depot/recuperation des seaux
+        coffreField = TextFieldWidget(textRenderer, centerX - 100, coffreY, 200, 20, Text.literal("Coffre"))
+        coffreField.text = config.homeCoffre
+        coffreField.setMaxLength(30)
+        addDrawableChild(coffreField)
 
         // === Section Stations (scrollable) ===
         val stationsStartY = coffreY + 40
@@ -135,9 +128,8 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
             context.drawTextWithShadow(textRenderer, "= $tempsStr", centerX + 80, 55, 0x55FF55)
         }
 
-        // Labels section Coffres
-        context.drawTextWithShadow(textRenderer, "Coffre Recup (apres 11h30):", centerX - 150, 70, 0xAAAAAA)
-        context.drawTextWithShadow(textRenderer, "Coffre Drop (matin):", centerX + 10, 70, 0xAAAAAA)
+        // Label section Coffre
+        context.drawTextWithShadow(textRenderer, "Home Coffre (seaux):", centerX - 100, 70, 0xAAAAAA)
 
         // Titre section Stations
         context.drawTextWithShadow(textRenderer, "Stations (scroll: molette)", centerX - 100, 105, 0xFFFF55)
@@ -174,9 +166,8 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
         config.selectedPlant = plantField.text
         config.growthBoost = boostField.text.toFloatOrNull() ?: 29f
 
-        // Sauvegarder les coffres
-        config.homeCoffre1 = coffreRecupField.text
-        config.homeCoffre2 = coffreDropField.text
+        // Sauvegarder le coffre
+        config.homeCoffre = coffreField.text
 
         // Sauvegarder les stations
         for (i in 0 until 30) {

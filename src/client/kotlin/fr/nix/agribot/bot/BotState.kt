@@ -54,20 +54,15 @@ data class BotStateData(
     var state: BotState = BotState.IDLE,
     var currentStationIndex: Int = 0,
     var totalStations: Int = 0,
-    var bucketsUsed: Int = 0,
-    var fullBucketsRemaining: Int = 0,
-    var currentBucketSlot: Int = 1,
     var sessionStartTime: Long = 0,
     var stationsCompleted: Int = 0,
     var needsWaterRefill: Boolean = false,
-    var isFirstSession: Boolean = true,
     var lastActionTime: Long = 0,
     var errorMessage: String = ""
 ) {
     fun reset() {
         state = BotState.IDLE
         currentStationIndex = 0
-        bucketsUsed = 0
         stationsCompleted = 0
         lastActionTime = 0
         errorMessage = ""

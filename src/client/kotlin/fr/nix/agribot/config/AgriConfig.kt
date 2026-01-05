@@ -20,13 +20,10 @@ data class AgriConfig(
     // Stations (30 max, chaine vide = pas de station)
     val stations: MutableList<String> = MutableList(30) { "" },
 
-    // Homes speciaux pour la gestion des seaux
-    var homeCoffre1: String = "coffre1",
-    var homeCoffre2: String = "coffre2",
+    // Home pour le coffre de seaux (depot/recuperation)
+    var homeCoffre: String = "coffre",
 
     // Parametres des seaux
-    var bucketSlot: Int = 1,           // Slot actuel des seaux (1 ou 2)
-    var fullBucketsInSlot: Int = 0,    // Nombre de seaux pleins dans le slot
     var lastBucketMode: String? = null, // "drop", "retrieve", ou "normal"
     var lastWaterRefillTime: Long? = null, // Timestamp du dernier remplissage
 

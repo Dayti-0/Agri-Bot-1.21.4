@@ -2,6 +2,7 @@ package fr.nix.agribot.bot
 
 import fr.nix.agribot.AgriBotClient
 import fr.nix.agribot.action.ActionManager
+import fr.nix.agribot.bucket.BucketManager
 import fr.nix.agribot.chat.ChatListener
 import fr.nix.agribot.chat.ChatManager
 import fr.nix.agribot.config.AgriConfig
@@ -28,6 +29,9 @@ object BotCore {
     private const val TICKS_PER_SECOND = 20
     private var tickCounter = 0
     private var waitTicks = 0
+
+    // Sous-etats pour la gestion des seaux dans le coffre
+    private var bucketManagementStep = 0
 
     /**
      * Initialise le bot et enregistre le tick handler.
@@ -75,6 +79,10 @@ object BotCore {
         logger.info("Plante: ${config.selectedPlant}")
         logger.info("========================================")
 
+        // Initialiser l'etat des seaux
+        BucketManager.refreshState()
+        BucketManager.logState()
+
         stateData.apply {
             state = BotState.MANAGING_BUCKETS
             currentStationIndex = 0
@@ -82,24 +90,19 @@ object BotCore {
             sessionStartTime = System.currentTimeMillis()
             stationsCompleted = 0
             needsWaterRefill = config.shouldRefillWater()
-            currentBucketSlot = config.bucketSlot
-            fullBucketsRemaining = config.fullBucketsInSlot
-        }
-
-        // Determiner le mode seaux au premier lancement
-        if (stateData.isFirstSession) {
-            stateData.currentBucketSlot = 1
-            stateData.fullBucketsRemaining = 0
-            config.bucketSlot = 1
-            config.fullBucketsInSlot = 0
-            stateData.isFirstSession = false
         }
 
         ChatManager.showActionBar("Session demarree - ${stations.size} stations", "a")
         ChatListener.resetAllDetections()
 
-        // Commencer par la gestion des seaux si necessaire
-        checkBucketManagement()
+        // Verifier si on doit gerer les seaux (transition matin/apres-midi)
+        if (BucketManager.needsModeTransition()) {
+            bucketManagementStep = 0
+            stateData.state = BotState.MANAGING_BUCKETS
+        } else {
+            BucketManager.saveCurrentMode()
+            stateData.state = BotState.TELEPORTING
+        }
     }
 
     /**
@@ -161,32 +164,73 @@ object BotCore {
 
     // ==================== HANDLERS ====================
 
-    private fun checkBucketManagement() {
-        val currentMode = config.getBucketMode()
-        val lastMode = config.lastBucketMode
+    private fun handleManagingBuckets() {
+        // Gestion des seaux via le coffre (depot ou recuperation)
+        val mode = BucketManager.getCurrentMode()
 
-        if (currentMode != lastMode && lastMode != null) {
-            // Transition de mode
-            when (currentMode) {
-                "drop" -> {
-                    logger.info("Transition vers mode matin - drop seaux")
-                    // TODO: Implementer drop seaux
-                }
-                "retrieve" -> {
-                    logger.info("Transition vers mode apres-midi - recuperation seaux")
-                    // TODO: Implementer recuperation seaux
+        when (bucketManagementStep) {
+            0 -> {
+                // Etape 1: Se teleporter au coffre
+                logger.info("Gestion seaux - TP vers coffre: ${config.homeCoffre}")
+                ChatManager.teleportToHome(config.homeCoffre)
+                bucketManagementStep = 1
+                waitMs(config.delayAfterTeleport)
+            }
+            1 -> {
+                // Etape 2: Ouvrir le coffre (clic droit)
+                logger.info("Gestion seaux - Ouverture coffre")
+                ActionManager.rightClick()
+                bucketManagementStep = 2
+                waitMs(config.delayAfterOpenMenu)
+            }
+            2 -> {
+                // Etape 3: Deposer ou recuperer les seaux selon le mode
+                when (mode) {
+                    fr.nix.agribot.bucket.BucketMode.MORNING -> {
+                        // Matin: deposer 15 seaux (garder 1)
+                        val toDeposit = BucketManager.getBucketsToDeposit()
+                        if (toDeposit > 0) {
+                            logger.info("Depot de $toDeposit seaux dans le coffre")
+                            // Shift+clic pour transferer les seaux
+                            // On selectionne d'abord un slot avec seaux
+                            if (InventoryManager.findAllBucketSlots().isNotEmpty()) {
+                                ActionManager.startSneaking()
+                                ActionManager.rightClick() // Shift+clic transfere le stack
+                                ActionManager.stopSneaking()
+                            }
+                        }
+                        bucketManagementStep = 3
+                        waitMs(500)
+                    }
+                    fr.nix.agribot.bucket.BucketMode.RETRIEVE -> {
+                        // Apres-midi: recuperer les seaux du coffre
+                        logger.info("Recuperation des seaux du coffre")
+                        // Shift+clic sur les seaux dans le coffre
+                        ActionManager.startSneaking()
+                        ActionManager.rightClick()
+                        ActionManager.stopSneaking()
+                        bucketManagementStep = 3
+                        waitMs(500)
+                    }
+                    else -> {
+                        bucketManagementStep = 3
+                    }
                 }
             }
-            config.lastBucketMode = currentMode
-            config.save()
+            3 -> {
+                // Etape 4: Fermer le coffre
+                ActionManager.pressEscape()
+                bucketManagementStep = 4
+                waitMs(500)
+            }
+            4 -> {
+                // Etape 5: Sauvegarder le mode et passer aux stations
+                BucketManager.saveCurrentMode()
+                BucketManager.refreshState()
+                logger.info("Gestion seaux terminee")
+                stateData.state = BotState.TELEPORTING
+            }
         }
-
-        // Passer a la premiere station
-        stateData.state = BotState.TELEPORTING
-    }
-
-    private fun handleManagingBuckets() {
-        checkBucketManagement()
     }
 
     private fun handleTeleporting() {
@@ -211,8 +255,8 @@ object BotCore {
 
     private fun handleWaitingTeleport() {
         // Attente terminee, ouvrir la station
-        // Selectionner le slot des graines d'abord (slot 0 / touche 0)
-        InventoryManager.selectSlot(9) // Slot 10 = touche 0
+        // Selectionner le slot des graines d'abord (slot 9 = touche 0)
+        InventoryManager.selectSlot(9)
 
         stateData.state = BotState.OPENING_STATION
         waitMs(200)
@@ -254,9 +298,8 @@ object BotCore {
 
         // Passer au remplissage d'eau si necessaire
         if (stateData.needsWaterRefill) {
+            BucketManager.prepareForStation()
             stateData.state = BotState.FILLING_WATER
-            stateData.bucketsUsed = 0
-            ChatListener.resetStationFullDetection()
         } else {
             stateData.state = BotState.NEXT_STATION
         }
@@ -265,56 +308,51 @@ object BotCore {
 
     private fun handleFillingWater() {
         // Verifier si station pleine
-        if (ChatListener.stationFullDetected) {
-            logger.info("Station pleine apres ${stateData.bucketsUsed} seaux")
+        if (BucketManager.isStationFull()) {
+            logger.info("Station pleine apres ${BucketManager.state.bucketsUsedThisStation} seaux")
             stateData.state = BotState.NEXT_STATION
             return
         }
 
-        // Selectionner le slot des seaux
-        InventoryManager.selectBucketSlot(stateData.currentBucketSlot)
-        waitMs(200)
-
-        // Verifier si on a besoin de remplir les seaux
-        if (stateData.fullBucketsRemaining <= 0) {
-            stateData.state = BotState.REFILLING_BUCKETS
+        // Verifier si on a des seaux d'eau
+        if (!BucketManager.hasWaterBuckets()) {
+            // Besoin de remplir les seaux vides
+            if (BucketManager.hasEmptyBuckets()) {
+                stateData.state = BotState.REFILLING_BUCKETS
+            } else {
+                // Plus de seaux du tout
+                logger.warn("Plus de seaux disponibles!")
+                stateData.state = BotState.NEXT_STATION
+            }
             return
         }
 
-        // Vider un seau
-        ActionManager.rightClick()
-        stateData.fullBucketsRemaining--
-        stateData.bucketsUsed++
-        waitMs(config.delayBetweenBuckets)
+        // Selectionner un seau d'eau et le vider
+        if (BucketManager.selectWaterBucket()) {
+            waitMs(200)
+            BucketManager.pourWaterBucket()
+            waitMs(config.delayBetweenBuckets)
+        }
 
         // Limite de securite
-        if (stateData.bucketsUsed >= 32) {
+        if (BucketManager.state.bucketsUsedThisStation >= 50) {
             logger.warn("Limite de seaux atteinte")
             stateData.state = BotState.NEXT_STATION
         }
     }
 
     private fun handleRefillingBuckets() {
-        // Utiliser /eau pour remplir les seaux
-        ChatManager.fillBuckets()
-
-        // Selon le mode (1 ou 16 seaux)
-        val bucketCount = config.getBucketCount()
-        if (bucketCount == 1) {
-            stateData.fullBucketsRemaining = 1
-        } else {
-            // Changer de slot si necessaire
-            if (stateData.currentBucketSlot == 1) {
-                stateData.currentBucketSlot = 2
-            } else {
-                stateData.currentBucketSlot = 1
-            }
-            InventoryManager.selectBucketSlot(stateData.currentBucketSlot)
-            stateData.fullBucketsRemaining = 16
+        // Selectionner les seaux vides
+        if (!BucketManager.selectEmptyBuckets()) {
+            logger.warn("Pas de seaux vides a remplir")
+            stateData.state = BotState.NEXT_STATION
+            return
         }
 
-        config.bucketSlot = stateData.currentBucketSlot
-        config.fullBucketsInSlot = stateData.fullBucketsRemaining
+        waitMs(200)
+
+        // Utiliser /eau pour remplir les seaux
+        BucketManager.fillBucketsWithCommand()
 
         stateData.state = BotState.FILLING_WATER
         waitMs(3000) // Attendre que /eau s'execute
@@ -323,11 +361,6 @@ object BotCore {
     private fun handleNextStation() {
         stateData.stationsCompleted++
         stateData.currentStationIndex++
-
-        // Sauvegarder l'etat des seaux
-        config.fullBucketsInSlot = stateData.fullBucketsRemaining
-        config.bucketSlot = stateData.currentBucketSlot
-        config.save()
 
         logger.info("Station terminee (${stateData.stationsCompleted}/${stateData.totalStations})")
 
