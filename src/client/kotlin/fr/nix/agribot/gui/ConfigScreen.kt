@@ -1,6 +1,7 @@
 package fr.nix.agribot.gui
 
 import fr.nix.agribot.AgriBotClient
+import fr.nix.agribot.config.AgriConfig
 import fr.nix.agribot.config.Plants
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
@@ -18,11 +19,13 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
     private lateinit var coffreField: TextFieldWidget
     private lateinit var plantField: TextFieldWidget
     private lateinit var boostField: TextFieldWidget
+    private lateinit var waterDurationButton: ButtonWidget
 
     private var scrollOffset = 0
     private val visibleStations = 8  // Nombre de stations visibles a l'ecran
     private val fieldHeight = 22
     private val fieldSpacing = 24
+    private var selectedWaterDurationIndex = 0
 
     override fun init() {
         super.init()
@@ -53,8 +56,24 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
         coffreField.setMaxLength(30)
         addDrawableChild(coffreField)
 
+        // === Section Duree eau ===
+        val waterY = coffreY + 28
+
+        // Trouver l'index de la duree actuelle
+        selectedWaterDurationIndex = AgriConfig.WATER_DURATIONS.indexOf(config.waterDurationMinutes)
+        if (selectedWaterDurationIndex == -1) selectedWaterDurationIndex = AgriConfig.WATER_DURATIONS.size - 1
+
+        // Bouton pour changer la duree d'eau
+        waterDurationButton = ButtonWidget.builder(Text.literal(AgriConfig.formatDuration(config.waterDurationMinutes))) { _ ->
+            // Cycle vers la prochaine valeur
+            selectedWaterDurationIndex = (selectedWaterDurationIndex + 1) % AgriConfig.WATER_DURATIONS.size
+            val newDuration = AgriConfig.WATER_DURATIONS[selectedWaterDurationIndex]
+            waterDurationButton.message = Text.literal(AgriConfig.formatDuration(newDuration))
+        }.dimensions(centerX + 30, waterY, 70, 20).build()
+        addDrawableChild(waterDurationButton)
+
         // === Section Stations (scrollable) ===
-        val stationsStartY = coffreY + 40
+        val stationsStartY = waterY + 35
         stationFields.clear()
 
         // Creer les 30 champs de stations (mais on n'affiche que visibleStations)
@@ -95,7 +114,7 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
         stationFields.forEach { remove(it) }
 
         // Ajouter seulement les champs visibles selon le scroll
-        val stationsStartY = 120
+        val stationsStartY = 148  // Ajuste pour la nouvelle section duree eau
         for (i in 0 until visibleStations) {
             val stationIndex = scrollOffset + i
             if (stationIndex < 30) {
@@ -131,15 +150,18 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
         // Label section Coffre
         context.drawTextWithShadow(textRenderer, "Home Coffre (seaux):", centerX - 100, 70, 0xAAAAAA)
 
+        // Label section Duree eau
+        context.drawTextWithShadow(textRenderer, "Duree eau stations:", centerX - 100, 103, 0xAAAAAA)
+
         // Titre section Stations
-        context.drawTextWithShadow(textRenderer, "Stations (scroll: molette)", centerX - 100, 105, 0xFFFF55)
-        context.drawTextWithShadow(textRenderer, "${scrollOffset + 1}-${minOf(scrollOffset + visibleStations, 30)}/30", centerX + 70, 105, 0x888888)
+        context.drawTextWithShadow(textRenderer, "Stations (scroll: molette)", centerX - 100, 133, 0xFFFF55)
+        context.drawTextWithShadow(textRenderer, "${scrollOffset + 1}-${minOf(scrollOffset + visibleStations, 30)}/30", centerX + 70, 133, 0x888888)
 
         // Labels des stations visibles
         for (i in 0 until visibleStations) {
             val stationIndex = scrollOffset + i
             if (stationIndex < 30) {
-                val y = 120 + (i * fieldSpacing) + 5
+                val y = 148 + (i * fieldSpacing) + 5
                 context.drawTextWithShadow(textRenderer, "${stationIndex + 1}.", centerX - 120, y, 0xAAAAAA)
             }
         }
@@ -168,6 +190,9 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
 
         // Sauvegarder le coffre
         config.homeCoffre = coffreField.text
+
+        // Sauvegarder la duree d'eau
+        config.waterDurationMinutes = AgriConfig.WATER_DURATIONS[selectedWaterDurationIndex]
 
         // Sauvegarder les stations
         for (i in 0 until 30) {

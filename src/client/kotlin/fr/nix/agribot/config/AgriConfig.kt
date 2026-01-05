@@ -23,6 +23,11 @@ data class AgriConfig(
     // Home pour le coffre de seaux (depot/recuperation)
     var homeCoffre: String = "coffre",
 
+    // Duree de l'eau dans les stations (en minutes)
+    // Valeurs possibles: 300 (5h), 340 (5h40), 380 (6h20), 420 (7h), 460 (7h40),
+    //                    500 (8h20), 540 (9h), 580 (9h40), 620 (10h20), 660 (11h), 720 (12h)
+    var waterDurationMinutes: Int = 720,  // 12h par defaut
+
     // Parametres des seaux
     var lastBucketMode: String? = null, // "drop", "retrieve", ou "normal"
     var lastWaterRefillTime: Long? = null, // Timestamp du dernier remplissage
@@ -47,6 +52,30 @@ data class AgriConfig(
         private val logger = LoggerFactory.getLogger("agribot")
         private val gson: Gson = GsonBuilder().setPrettyPrinting().create()
         private var instance: AgriConfig? = null
+
+        // Durees d'eau disponibles (en minutes)
+        val WATER_DURATIONS = listOf(
+            300,  // 5h
+            340,  // 5h40
+            380,  // 6h20
+            420,  // 7h
+            460,  // 7h40
+            500,  // 8h20
+            540,  // 9h
+            580,  // 9h40
+            620,  // 10h20
+            660,  // 11h
+            720   // 12h
+        )
+
+        /**
+         * Formate une duree en minutes en texte lisible.
+         */
+        fun formatDuration(minutes: Int): String {
+            val hours = minutes / 60
+            val mins = minutes % 60
+            return if (mins > 0) "${hours}h${mins}" else "${hours}h"
+        }
 
         private fun getConfigFile(): File {
             val configDir = FabricLoader.getInstance().configDir.toFile()
@@ -181,17 +210,17 @@ data class AgriConfig(
 
     /**
      * Determine si on doit remplir les stations d'eau cette session.
-     * L'eau dure 12h.
+     * Utilise la duree configuree (waterDurationMinutes).
      */
     fun shouldRefillWater(): Boolean {
-        val waterDuration = 12 * 60 * 60 // 12h en secondes
+        val waterDuration = waterDurationMinutes * 60 // Convertir en secondes
         val currentTime = System.currentTimeMillis() / 1000
         val sessionPause = getSessionPauseSeconds()
 
-        // Premiere session (pas de timestamp)
+        // Premiere session (pas de timestamp) -> REMPLIR l'eau
         if (lastWaterRefillTime == null) {
-            logger.info("Premiere session - stations deja remplies manuellement")
-            return false
+            logger.info("Premiere session - remplissage de l'eau necessaire")
+            return true
         }
 
         val timeSinceRefill = currentTime - lastWaterRefillTime!!
@@ -206,5 +235,14 @@ data class AgriConfig(
         val hoursRemaining = (waterDuration - timeSinceRefill) / 3600.0
         logger.info("Pas besoin de remplir l'eau - reste ${String.format("%.1f", hoursRemaining)}h")
         return false
+    }
+
+    /**
+     * Formate la duree de l'eau en texte lisible.
+     */
+    fun formatWaterDuration(): String {
+        val hours = waterDurationMinutes / 60
+        val minutes = waterDurationMinutes % 60
+        return if (minutes > 0) "${hours}h${minutes}" else "${hours}h"
     }
 }
