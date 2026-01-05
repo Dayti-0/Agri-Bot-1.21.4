@@ -1,5 +1,6 @@
 package fr.nix.agribot
 
+import fr.nix.agribot.bot.BotCore
 import fr.nix.agribot.config.AgriConfig
 import fr.nix.agribot.config.Plants
 import fr.nix.agribot.input.KeyBindings
@@ -22,6 +23,9 @@ object AgriBotClient : ClientModInitializer {
 
         // Enregistrer les touches
         KeyBindings.register()
+
+        // Initialiser le coeur du bot
+        BotCore.init()
 
         // Afficher les infos de config
         logger.info("Serveur: ${config.serverAddress}")

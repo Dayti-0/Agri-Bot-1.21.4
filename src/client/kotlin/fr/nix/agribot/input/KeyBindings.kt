@@ -1,6 +1,8 @@
 package fr.nix.agribot.input
 
 import fr.nix.agribot.AgriBotClient
+import fr.nix.agribot.bot.BotCore
+import fr.nix.agribot.bot.BotState
 import fr.nix.agribot.gui.ConfigScreen
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper
@@ -63,16 +65,15 @@ object KeyBindings {
         // Activer/desactiver le bot
         while (keyToggleBot.wasPressed()) {
             val config = AgriBotClient.config
-            config.botEnabled = !config.botEnabled
 
-            val status = if (config.botEnabled) "ACTIVE" else "DESACTIVE"
-            logger.info("Bot $status")
-
-            // Afficher un message dans le chat
-            client.player?.sendMessage(
-                net.minecraft.text.Text.literal("§6[AgriBot]§r Bot $status"),
-                true  // Action bar
-            )
+            if (config.botEnabled) {
+                // Arreter le bot
+                BotCore.stop()
+            } else {
+                // Demarrer le bot
+                config.botEnabled = true
+                BotCore.startSession()
+            }
         }
     }
 }
