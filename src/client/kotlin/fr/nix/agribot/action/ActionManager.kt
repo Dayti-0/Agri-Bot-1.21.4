@@ -147,6 +147,9 @@ object ActionManager {
             val options = client.options
             val player = client.player
 
+            // Forcer l'etat de sneak directement sur le joueur
+            player?.setSneaking(true)
+
             // Activer la touche sneak
             KeyBinding.setKeyPressed(options.sneakKey.defaultKey, true)
             sneakKeyHeld = true
@@ -163,6 +166,9 @@ object ActionManager {
         client.execute {
             val options = client.options
             val player = client.player
+
+            // Desactiver l'etat de sneak directement sur le joueur
+            player?.setSneaking(false)
 
             // Desactiver la touche sneak
             KeyBinding.setKeyPressed(options.sneakKey.defaultKey, false)
