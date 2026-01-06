@@ -145,6 +145,7 @@ object BotCore {
             BotState.FILLING_WATER -> handleFillingWater()
             BotState.REFILLING_BUCKETS -> handleRefillingBuckets()
             BotState.NEXT_STATION -> handleNextStation()
+            BotState.EMPTYING_REMAINING_BUCKETS -> handleEmptyingRemainingBuckets()
             BotState.DISCONNECTING -> handleDisconnecting()
             BotState.PAUSED -> handlePaused()
             BotState.ERROR -> handleError()
@@ -420,10 +421,29 @@ object BotCore {
                 config.lastWaterRefillTime = System.currentTimeMillis() / 1000
                 config.save()
             }
-            stateData.state = BotState.DISCONNECTING
+            // Vider les seaux restants avant de terminer
+            stateData.state = BotState.EMPTYING_REMAINING_BUCKETS
         } else {
             stateData.state = BotState.TELEPORTING
             waitMs(800)
+        }
+    }
+
+    private fun handleEmptyingRemainingBuckets() {
+        // Vider tous les seaux d'eau restants dans la derniere station
+        BucketManager.refreshState()
+
+        if (BucketManager.hasWaterBuckets()) {
+            // Selectionner et vider un seau
+            if (BucketManager.selectWaterBucket()) {
+                logger.info("Vidage seau restant (${BucketManager.state.waterBucketsCount} restants)")
+                ActionManager.rightClick()
+                waitMs(4000)  // Delai long entre chaque seau (4 secondes)
+            }
+        } else {
+            // Plus de seaux d'eau, on peut terminer
+            logger.info("Tous les seaux ont ete vides")
+            stateData.state = BotState.DISCONNECTING
         }
     }
 

@@ -37,6 +37,9 @@ enum class BotState {
     /** Passage a la station suivante */
     NEXT_STATION,
 
+    /** Vidage des seaux restants en fin de session */
+    EMPTYING_REMAINING_BUCKETS,
+
     /** Fin de session, deconnexion */
     DISCONNECTING,
 
