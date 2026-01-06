@@ -7,6 +7,7 @@ import fr.nix.agribot.chat.ChatListener
 import fr.nix.agribot.chat.ChatManager
 import fr.nix.agribot.config.AgriConfig
 import fr.nix.agribot.inventory.InventoryManager
+import fr.nix.agribot.menu.MenuDetector
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
 import net.minecraft.client.MinecraftClient
 import org.slf4j.LoggerFactory
@@ -180,8 +181,20 @@ object BotCore {
                 // Etape 2: Ouvrir le coffre (clic droit)
                 logger.info("Gestion seaux - Ouverture coffre")
                 ActionManager.rightClick()
-                bucketManagementStep = 2
-                waitMs(config.delayAfterOpenMenu)
+
+                // Attendre que le coffre soit ouvert (avec timeout de 5 secondes)
+                if (MenuDetector.waitForChestOpen(timeoutMs = 5000)) {
+                    logger.info("Coffre ouvert - Menu detecte")
+                    MenuDetector.debugCurrentMenu()
+                    bucketManagementStep = 2
+                    waitMs(500) // Petit delai de stabilisation
+                } else {
+                    logger.warn("Echec ouverture coffre - Timeout")
+                    ChatManager.showActionBar("Echec ouverture coffre!", "c")
+                    // Reessayer l'ouverture
+                    bucketManagementStep = 1
+                    waitMs(1000)
+                }
             }
             2 -> {
                 // Etape 3: Deposer ou recuperer les seaux selon le mode
@@ -266,8 +279,19 @@ object BotCore {
         // Clic droit pour ouvrir la station
         ActionManager.rightClick()
 
-        stateData.state = BotState.HARVESTING
-        waitMs(config.delayAfterOpenMenu)
+        // Attendre que le menu de la station soit ouvert (avec timeout de 5 secondes)
+        if (MenuDetector.waitForSimpleMenuOpen(timeoutMs = 5000)) {
+            logger.info("Station ouverte - Menu detecte")
+            MenuDetector.debugCurrentMenu()
+            stateData.state = BotState.HARVESTING
+            waitMs(500) // Petit delai de stabilisation
+        } else {
+            logger.warn("Echec ouverture station - Timeout")
+            ChatManager.showActionBar("Echec ouverture station!", "c")
+            // Reessayer l'ouverture
+            stateData.state = BotState.OPENING_STATION
+            waitMs(1000)
+        }
     }
 
     private fun handleHarvesting() {

@@ -1,0 +1,246 @@
+package fr.nix.agribot.menu
+
+import net.minecraft.client.MinecraftClient
+import net.minecraft.client.gui.screen.Screen
+import net.minecraft.client.gui.screen.ingame.GenericContainerScreen
+import net.minecraft.client.gui.screen.ingame.HandledScreen
+import net.minecraft.screen.GenericContainerScreenHandler
+import net.minecraft.screen.ScreenHandler
+import org.slf4j.LoggerFactory
+
+/**
+ * Gestionnaire de detection de menus pour le bot.
+ * Detecte si un menu (coffre, station d'agriculture, etc.) est ouvert.
+ */
+object MenuDetector {
+    private val logger = LoggerFactory.getLogger("agribot")
+
+    private val client: MinecraftClient
+        get() = MinecraftClient.getInstance()
+
+    /**
+     * Type de menu detecte.
+     */
+    enum class MenuType {
+        NONE,           // Aucun menu ouvert
+        CHEST,          // Coffre ou container generique
+        HOPPER,         // Hopper
+        DISPENSER,      // Distributeur/dropper
+        FURNACE,        // Fourneau
+        CRAFTING,       // Table de craft
+        BREWING,        // Alambic
+        ENCHANTING,     // Table d'enchantement
+        ANVIL,          // Enclume
+        BEACON,         // Balise
+        GENERIC,        // Menu generique (sans titre specifique)
+        UNKNOWN         // Menu inconnu (HandledScreen)
+    }
+
+    /**
+     * Verifie si un menu est actuellement ouvert.
+     */
+    fun isMenuOpen(): Boolean {
+        return client.currentScreen is HandledScreen<*>
+    }
+
+    /**
+     * Detecte le type de menu actuellement ouvert.
+     */
+    fun detectMenuType(): MenuType {
+        val screen = client.currentScreen ?: return MenuType.NONE
+
+        // Verifier si c'est un HandledScreen (menu avec inventaire)
+        if (screen !is HandledScreen<*>) {
+            return MenuType.NONE
+        }
+
+        // Obtenir le ScreenHandler
+        val handler = screen.screenHandler ?: return MenuType.UNKNOWN
+
+        // Detection par type de ScreenHandler
+        return when (handler) {
+            is GenericContainerScreenHandler -> {
+                // Container generique (coffre, barrel, shulker box, etc.)
+                detectContainerType(handler)
+            }
+            is net.minecraft.screen.HopperScreenHandler -> MenuType.HOPPER
+            is net.minecraft.screen.FurnaceScreenHandler -> MenuType.FURNACE
+            is net.minecraft.screen.BlastFurnaceScreenHandler -> MenuType.FURNACE
+            is net.minecraft.screen.SmokerScreenHandler -> MenuType.FURNACE
+            is net.minecraft.screen.CraftingScreenHandler -> MenuType.CRAFTING
+            is net.minecraft.screen.BrewingStandScreenHandler -> MenuType.BREWING
+            is net.minecraft.screen.EnchantmentScreenHandler -> MenuType.ENCHANTING
+            is net.minecraft.screen.AnvilScreenHandler -> MenuType.ANVIL
+            is net.minecraft.screen.BeaconScreenHandler -> MenuType.BEACON
+            is net.minecraft.screen.Generic3x3ContainerScreenHandler -> MenuType.DISPENSER
+            else -> MenuType.UNKNOWN
+        }
+    }
+
+    /**
+     * Detecte le type specifique de container generique.
+     */
+    private fun detectContainerType(handler: GenericContainerScreenHandler): MenuType {
+        // Les containers generiques incluent:
+        // - Coffres (27 ou 54 slots)
+        // - Barrels (27 slots)
+        // - Shulker boxes (27 slots)
+        // - Stations d'agriculture custom (peuvent varier)
+
+        val rows = handler.rows
+
+        return when {
+            rows == 3 || rows == 6 -> MenuType.CHEST // Coffre simple ou double
+            else -> MenuType.GENERIC // Autre container generique
+        }
+    }
+
+    /**
+     * Verifie si un coffre ou container generique est ouvert.
+     * Utile pour verifier avant de faire des operations sur un coffre.
+     */
+    fun isChestOrContainerOpen(): Boolean {
+        val menuType = detectMenuType()
+        return menuType == MenuType.CHEST || menuType == MenuType.GENERIC
+    }
+
+    /**
+     * Verifie si un menu simple (sans titre specifique) est ouvert.
+     * Cela peut etre un coffre, une station d'agriculture, etc.
+     */
+    fun isSimpleMenuOpen(): Boolean {
+        val screen = client.currentScreen
+        if (screen !is HandledScreen<*>) return false
+
+        // Verifier si c'est un menu avec handler
+        val handler = screen.screenHandler ?: return false
+
+        // Un menu simple est typiquement un GenericContainerScreenHandler
+        return handler is GenericContainerScreenHandler
+    }
+
+    /**
+     * Attend qu'un menu soit ouvert.
+     *
+     * @param timeoutMs Temps maximum d'attente en millisecondes
+     * @param checkIntervalMs Intervalle entre chaque verification en millisecondes
+     * @return true si un menu s'est ouvert, false si timeout
+     */
+    fun waitForMenuOpen(timeoutMs: Long = 5000, checkIntervalMs: Long = 50): Boolean {
+        val startTime = System.currentTimeMillis()
+
+        while (System.currentTimeMillis() - startTime < timeoutMs) {
+            if (isMenuOpen()) {
+                val menuType = detectMenuType()
+                logger.debug("Menu detecte: $menuType")
+                return true
+            }
+            Thread.sleep(checkIntervalMs)
+        }
+
+        logger.warn("Timeout: aucun menu detecte apres ${timeoutMs}ms")
+        return false
+    }
+
+    /**
+     * Attend qu'un coffre ou container soit ouvert.
+     *
+     * @param timeoutMs Temps maximum d'attente en millisecondes
+     * @param checkIntervalMs Intervalle entre chaque verification en millisecondes
+     * @return true si un coffre s'est ouvert, false si timeout
+     */
+    fun waitForChestOpen(timeoutMs: Long = 5000, checkIntervalMs: Long = 50): Boolean {
+        val startTime = System.currentTimeMillis()
+
+        while (System.currentTimeMillis() - startTime < timeoutMs) {
+            if (isChestOrContainerOpen()) {
+                logger.debug("Coffre/container detecte")
+                return true
+            }
+            Thread.sleep(checkIntervalMs)
+        }
+
+        logger.warn("Timeout: aucun coffre detecte apres ${timeoutMs}ms")
+        return false
+    }
+
+    /**
+     * Attend qu'un menu simple soit ouvert.
+     *
+     * @param timeoutMs Temps maximum d'attente en millisecondes
+     * @param checkIntervalMs Intervalle entre chaque verification en millisecondes
+     * @return true si un menu simple s'est ouvert, false si timeout
+     */
+    fun waitForSimpleMenuOpen(timeoutMs: Long = 5000, checkIntervalMs: Long = 50): Boolean {
+        val startTime = System.currentTimeMillis()
+
+        while (System.currentTimeMillis() - startTime < timeoutMs) {
+            if (isSimpleMenuOpen()) {
+                logger.debug("Menu simple detecte")
+                return true
+            }
+            Thread.sleep(checkIntervalMs)
+        }
+
+        logger.warn("Timeout: aucun menu simple detecte apres ${timeoutMs}ms")
+        return false
+    }
+
+    /**
+     * Obtient le nombre de slots du menu actuellement ouvert.
+     * Utile pour determiner la taille d'un coffre ou d'une station.
+     *
+     * @return Nombre de slots, ou 0 si aucun menu n'est ouvert
+     */
+    fun getMenuSlotCount(): Int {
+        val screen = client.currentScreen
+        if (screen !is HandledScreen<*>) return 0
+
+        val handler = screen.screenHandler ?: return 0
+        return handler.slots.size
+    }
+
+    /**
+     * Obtient des informations detaillees sur le menu ouvert.
+     */
+    fun getMenuInfo(): MenuInfo? {
+        val screen = client.currentScreen ?: return null
+        if (screen !is HandledScreen<*>) return null
+
+        val handler = screen.screenHandler ?: return null
+        val menuType = detectMenuType()
+        val slotCount = handler.slots.size
+        val title = screen.title?.string ?: "Sans titre"
+
+        return MenuInfo(menuType, slotCount, title)
+    }
+
+    /**
+     * Classe pour stocker les informations sur un menu.
+     */
+    data class MenuInfo(
+        val type: MenuType,
+        val slotCount: Int,
+        val title: String
+    ) {
+        override fun toString(): String {
+            return "MenuInfo(type=$type, slots=$slotCount, title='$title')"
+        }
+    }
+
+    /**
+     * Affiche des informations de debug sur le menu actuel.
+     */
+    fun debugCurrentMenu() {
+        val info = getMenuInfo()
+        if (info != null) {
+            logger.info("=== Menu actuel ===")
+            logger.info("Type: ${info.type}")
+            logger.info("Slots: ${info.slotCount}")
+            logger.info("Titre: ${info.title}")
+            logger.info("==================")
+        } else {
+            logger.info("Aucun menu ouvert")
+        }
+    }
+}

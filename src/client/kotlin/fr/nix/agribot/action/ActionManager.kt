@@ -1,5 +1,6 @@
 package fr.nix.agribot.action
 
+import fr.nix.agribot.menu.MenuDetector
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.option.KeyBinding
 import net.minecraft.util.Hand
@@ -158,6 +159,39 @@ object ActionManager {
     fun isInInventoryScreen(): Boolean {
         val screen = client.currentScreen ?: return false
         return screen is net.minecraft.client.gui.screen.ingame.HandledScreen<*>
+    }
+
+    /**
+     * Verifie si un menu (coffre, station, etc.) est ouvert.
+     * Utilise MenuDetector pour une detection plus precise.
+     */
+    fun isMenuOpen(): Boolean {
+        return MenuDetector.isMenuOpen()
+    }
+
+    /**
+     * Verifie si un coffre ou container est ouvert.
+     */
+    fun isChestOpen(): Boolean {
+        return MenuDetector.isChestOrContainerOpen()
+    }
+
+    /**
+     * Ouvre un coffre/container avec clic droit et attend qu'il soit ouvert.
+     * @return true si le coffre s'est ouvert, false sinon
+     */
+    fun openChestAndWait(timeoutMs: Long = 5000): Boolean {
+        rightClick()
+        return MenuDetector.waitForChestOpen(timeoutMs)
+    }
+
+    /**
+     * Ouvre un menu simple avec clic droit et attend qu'il soit ouvert.
+     * @return true si le menu s'est ouvert, false sinon
+     */
+    fun openMenuAndWait(timeoutMs: Long = 5000): Boolean {
+        rightClick()
+        return MenuDetector.waitForSimpleMenuOpen(timeoutMs)
     }
 
     /**
