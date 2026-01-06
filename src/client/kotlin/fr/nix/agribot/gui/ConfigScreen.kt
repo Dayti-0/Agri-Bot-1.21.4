@@ -23,9 +23,10 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
     private lateinit var waterDurationButton: ButtonWidget
 
     private var scrollOffset = 0
-    private val visibleStations = 8  // Nombre de stations visibles a l'ecran
+    private var visibleStations = 8  // Nombre de stations visibles a l'ecran (calculé dynamiquement)
     private val fieldHeight = 22
     private val fieldSpacing = 24
+    private var stationsStartY = 143  // Position Y de départ des stations (calculée dans init)
     private var selectedWaterDurationIndex = 0
     private var selectedPlantIndex = 0
     private val plantNames = Plants.getNames()
@@ -86,8 +87,13 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
         addDrawableChild(waterDurationButton)
 
         // === Section Stations (scrollable) ===
-        val stationsStartY = waterY + 35
+        stationsStartY = waterY + 35
         stationFields.clear()
+
+        // Calculer le nombre de stations visibles en fonction de l'espace disponible
+        val bottomMargin = 60  // Espace pour "Stations actives" (height-50) et boutons (height-30)
+        val availableHeight = height - stationsStartY - bottomMargin
+        visibleStations = maxOf(1, minOf(8, availableHeight / fieldSpacing))
 
         // Creer les 30 champs de stations (mais on n'affiche que visibleStations)
         for (i in 0 until 30) {
@@ -127,7 +133,6 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
         stationFields.forEach { remove(it) }
 
         // Ajouter seulement les champs visibles selon le scroll
-        val stationsStartY = 148  // Ajuste pour la nouvelle section duree eau
         for (i in 0 until visibleStations) {
             val stationIndex = scrollOffset + i
             if (stationIndex < 30) {
@@ -172,14 +177,15 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
         context.drawTextWithShadow(textRenderer, "Duree eau stations:", centerX - 100, 103, 0xAAAAAA)
 
         // Titre section Stations
-        context.drawTextWithShadow(textRenderer, "Stations (scroll: molette)", centerX - 100, 133, 0xFFFF55)
-        context.drawTextWithShadow(textRenderer, "${scrollOffset + 1}-${minOf(scrollOffset + visibleStations, 30)}/30", centerX + 70, 133, 0x888888)
+        val stationsTitleY = stationsStartY - 10
+        context.drawTextWithShadow(textRenderer, "Stations (scroll: molette)", centerX - 100, stationsTitleY, 0xFFFF55)
+        context.drawTextWithShadow(textRenderer, "${scrollOffset + 1}-${minOf(scrollOffset + visibleStations, 30)}/30", centerX + 70, stationsTitleY, 0x888888)
 
         // Labels des stations visibles
         for (i in 0 until visibleStations) {
             val stationIndex = scrollOffset + i
             if (stationIndex < 30) {
-                val y = 148 + (i * fieldSpacing) + 5
+                val y = stationsStartY + (i * fieldSpacing) + 5
                 context.drawTextWithShadow(textRenderer, "${stationIndex + 1}.", centerX - 120, y, 0xAAAAAA)
             }
         }
