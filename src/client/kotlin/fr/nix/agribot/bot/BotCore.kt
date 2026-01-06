@@ -366,20 +366,29 @@ object BotCore {
     private fun handlePlanting() {
         // Planter: sneak + micro pause + clic droit + relacher sneak
         // Machine d'etat pour assurer les delais entre chaque action
+        // IMPORTANT: Il faut etre accroupi pour planter sinon ca ouvre le menu
         when (plantingStep) {
             0 -> {
                 // Etape 1: S'accroupir (sneak)
-                logger.info("Plantation - sneak")
+                logger.info("Plantation - debut sneak")
                 ActionManager.startSneaking()
                 plantingStep = 1
-                waitMs(150)  // Attendre que le sneak soit bien actif
+                waitMs(300)  // Attendre que le sneak soit bien actif (delai augmente)
             }
             1 -> {
-                // Etape 2: Clic droit pour planter (en etant accroupi)
-                logger.info("Plantation - clic droit (en sneak)")
-                ActionManager.rightClick()
-                plantingStep = 2
-                waitMs(150)  // Attendre que l'action soit executee
+                // Etape 2: Verifier que le sneak est actif puis clic droit pour planter
+                val player = MinecraftClient.getInstance().player
+                if (player?.isSneaking == true) {
+                    logger.info("Plantation - clic droit (sneak actif: ${player.isSneaking})")
+                    ActionManager.rightClick()
+                    plantingStep = 2
+                    waitMs(200)  // Attendre que l'action soit executee
+                } else {
+                    // Sneak pas encore actif, reessayer de l'activer
+                    logger.warn("Plantation - sneak non actif, reactivation...")
+                    ActionManager.startSneaking()
+                    waitMs(200)  // Attendre et reessayer
+                }
             }
             2 -> {
                 // Etape 3: Se relever
