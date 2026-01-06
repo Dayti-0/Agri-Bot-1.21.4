@@ -149,6 +149,12 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
             close()
             TestActions.testRemplissageEau()
         }.dimensions(testButtonX, 51, testButtonWidth, 16).build())
+
+        // Test planter (TP + recolte + plantation)
+        addDrawableChild(ButtonWidget.builder(Text.literal("Test Planter")) { _ ->
+            close()
+            TestActions.testPlanter()
+        }.dimensions(testButtonX, 69, testButtonWidth, 16).build())
     }
 
     private fun updateVisibleFields() {
