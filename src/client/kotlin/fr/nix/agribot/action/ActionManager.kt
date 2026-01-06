@@ -242,4 +242,55 @@ object ActionManager {
             logger.debug("Attaque bloc")
         }
     }
+
+    /**
+     * Clique sur un slot specifique dans le menu ouvert.
+     * @param slotIndex Index du slot dans le menu (commence a 0)
+     * @param button Bouton de la souris (0 = gauche, 1 = droit, 2 = milieu)
+     * @param clickType Type de clic (PICKUP = clic normal)
+     */
+    fun clickSlot(slotIndex: Int, button: Int = 1) {
+        val screen = client.currentScreen
+        if (screen !is net.minecraft.client.gui.screen.ingame.HandledScreen<*>) {
+            logger.warn("Aucun menu ouvert pour cliquer sur le slot")
+            return
+        }
+
+        val handler = screen.screenHandler ?: return
+        val interactionManager = client.interactionManager ?: return
+        val player = client.player ?: return
+
+        // Verifier que le slot existe
+        if (slotIndex < 0 || slotIndex >= handler.slots.size) {
+            logger.warn("Index de slot invalide: $slotIndex (max: ${handler.slots.size - 1})")
+            return
+        }
+
+        // Effectuer le clic sur le slot
+        // PICKUP = clic normal (0), QUICK_MOVE = shift+clic (1), etc.
+        interactionManager.clickSlot(
+            handler.syncId,
+            slotIndex,
+            button,
+            net.minecraft.screen.slot.SlotActionType.PICKUP,
+            player
+        )
+        logger.debug("Clic slot $slotIndex avec bouton $button")
+    }
+
+    /**
+     * Clique droit sur un slot specifique dans le menu ouvert.
+     * @param slotIndex Index du slot dans le menu
+     */
+    fun rightClickSlot(slotIndex: Int) {
+        clickSlot(slotIndex, button = 1)
+    }
+
+    /**
+     * Clique gauche sur un slot specifique dans le menu ouvert.
+     * @param slotIndex Index du slot dans le menu
+     */
+    fun leftClickSlot(slotIndex: Int) {
+        clickSlot(slotIndex, button = 0)
+    }
 }

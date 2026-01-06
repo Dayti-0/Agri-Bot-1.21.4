@@ -205,4 +205,69 @@ object InventoryManager {
         val player = client.player ?: return 0
         return player.inventory.mainHandStack.count
     }
+
+    /**
+     * Trouve le premier slot contenant des graines (ou tout item qui n'est pas un seau).
+     * @return Index du slot (0-8), ou -1 si aucun slot trouve
+     */
+    fun findSeedsSlot(): Int {
+        val player = client.player ?: return -1
+
+        for (i in 0..8) {
+            val stack = player.inventory.getStack(i)
+            // Chercher un slot non vide qui ne contient pas de seaux
+            if (!stack.isEmpty && stack.item != Items.WATER_BUCKET && stack.item != Items.BUCKET) {
+                logger.debug("Graines trouvees dans le slot ${i + 1}")
+                return i
+            }
+        }
+
+        logger.warn("Aucun slot avec graines trouve dans la hotbar")
+        return -1
+    }
+
+    /**
+     * Selectionne le slot contenant les graines.
+     * @return true si un slot a ete trouve et selectionne, false sinon
+     */
+    fun selectSeedsSlotAuto(): Boolean {
+        val slotIndex = findSeedsSlot()
+        if (slotIndex >= 0) {
+            selectSlot(slotIndex)
+            logger.info("Slot graines selectionne: ${slotIndex + 1}")
+            return true
+        }
+        logger.warn("Impossible de trouver les graines dans la hotbar")
+        return false
+    }
+
+    /**
+     * Trouve le slot contenant un bloc de melon dans le menu ouvert.
+     * Utile pour detecter les fruits a recolter dans une station.
+     * @return Index du slot dans le menu, ou -1 si aucun melon trouve
+     */
+    fun findMelonSlotInMenu(): Int {
+        val screen = client.currentScreen
+        if (screen !is net.minecraft.client.gui.screen.ingame.HandledScreen<*>) {
+            logger.warn("Aucun menu ouvert pour chercher le melon")
+            return -1
+        }
+
+        val handler = screen.screenHandler ?: return -1
+
+        // Parcourir tous les slots du menu
+        for (i in 0 until handler.slots.size) {
+            val slot = handler.slots[i]
+            val stack = slot.stack
+
+            // Verifier si c'est un bloc de melon
+            if (!stack.isEmpty && stack.item == Items.MELON) {
+                logger.debug("Bloc de melon trouve dans le slot $i du menu")
+                return i
+            }
+        }
+
+        logger.warn("Aucun bloc de melon trouve dans le menu")
+        return -1
+    }
 }
