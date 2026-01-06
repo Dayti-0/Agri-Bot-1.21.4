@@ -293,39 +293,25 @@ object BotCore {
     }
 
     private fun handleHarvesting() {
-        // Recolte: clic droit sur le slot du bloc de melon dans le menu
-        // Detecter automatiquement le slot contenant le melon
-        val melonSlot = InventoryManager.findMelonSlotInMenu()
-
-        if (melonSlot >= 0) {
-            logger.info("Recolte du melon au slot $melonSlot")
-            ActionManager.rightClickSlot(melonSlot)
-        } else {
-            logger.warn("Aucun melon detecte, clic droit generique")
-            ActionManager.rightClick()
-        }
-
-        waitMs(500)
-
-        // Le prochain tick fera le clic gauche
-        stateData.state = BotState.PLANTING
-        waitMs(500)
-    }
-
-    private fun handlePlanting() {
-        // Clic gauche pour recolter
+        // Recolte: clic gauche uniquement
+        logger.info("Recolte - clic gauche")
         ActionManager.leftClick()
         waitMs(300)
 
-        // Fermer le menu
+        // Fermer le menu de station
         ActionManager.pressEscape()
         waitMs(300)
 
-        // Planter: shift + clic droit
+        stateData.state = BotState.PLANTING
+    }
+
+    private fun handlePlanting() {
+        // Planter: sneak + micro pause + clic droit + relacher sneak
+        logger.info("Plantation - sneak + clic droit")
         ActionManager.startSneaking()
-        waitMs(100)
+        waitMs(100)  // micro pause en sneak
         ActionManager.rightClick()
-        waitMs(300)
+        waitMs(100)
         ActionManager.stopSneaking()
 
         // Passer au remplissage d'eau si necessaire
