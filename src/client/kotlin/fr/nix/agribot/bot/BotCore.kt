@@ -318,8 +318,8 @@ object BotCore {
                         logger.info("Pas de melon mais barreaux de fer detectes - pas de recolte necessaire")
                         harvestingStep = 2
                     } else {
-                        // Ni melon ni barreaux de fer - situation inhabituelle, on ferme quand meme
-                        logger.warn("Ni melon ni barreaux de fer detectes - fermeture du menu")
+                        // Ni melon ni barreaux de fer - graine deja plantee, on ferme
+                        logger.info("Graine deja plantee - pas de recolte necessaire")
                         harvestingStep = 2
                     }
                 }
