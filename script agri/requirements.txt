@@ -1,5 +1,0 @@
-pyautogui
-pydirectinput
-pynput
-pyperclip
-requests
