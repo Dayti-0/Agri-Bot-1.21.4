@@ -4,6 +4,8 @@ import net.minecraft.client.MinecraftClient
 import net.minecraft.item.Items
 import net.minecraft.screen.GenericContainerScreenHandler
 import org.slf4j.LoggerFactory
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
 
 /**
  * Donnees d'un slot contenant des seaux.
@@ -275,72 +277,108 @@ object InventoryManager {
     /**
      * Trouve tous les slots contenant des seaux (pleins ou vides) dans le menu du coffre ouvert.
      * Retourne les slots de l'inventaire du joueur (pas ceux du coffre).
+     * Thread-safe: peut etre appele depuis n'importe quel thread.
      * @return Liste des index de slots contenant des seaux dans le menu
      */
     fun findBucketSlotsInChestMenu(): List<Int> {
-        val screen = client.currentScreen
-        if (screen !is net.minecraft.client.gui.screen.ingame.HandledScreen<*>) {
-            logger.warn("Aucun menu ouvert pour chercher les seaux")
-            return emptyList()
-        }
+        val future = CompletableFuture<List<Int>>()
 
-        val handler = screen.screenHandler ?: return emptyList()
-        val result = mutableListOf<Int>()
-
-        // Determiner ou commence l'inventaire du joueur dans le menu
-        // Pour un coffre simple (27 slots): inventaire joueur = slots 27-62
-        // Pour un grand coffre (54 slots): inventaire joueur = slots 54-89
-        val chestSize = when (handler) {
-            is GenericContainerScreenHandler -> handler.rows * 9
-            else -> 27  // Par defaut, coffre simple
-        }
-
-        // Parcourir les slots de l'inventaire du joueur dans le menu
-        for (i in chestSize until handler.slots.size) {
-            val slot = handler.slots[i]
-            val stack = slot.stack
-
-            if (!stack.isEmpty && (stack.item == Items.WATER_BUCKET || stack.item == Items.BUCKET)) {
-                result.add(i)
-                logger.debug("Seau trouve dans le slot $i du menu")
+        client.execute {
+            val screen = client.currentScreen
+            if (screen !is net.minecraft.client.gui.screen.ingame.HandledScreen<*>) {
+                logger.warn("Aucun menu ouvert pour chercher les seaux")
+                future.complete(emptyList())
+                return@execute
             }
+
+            val handler = screen.screenHandler
+            if (handler == null) {
+                future.complete(emptyList())
+                return@execute
+            }
+
+            val result = mutableListOf<Int>()
+
+            // Determiner ou commence l'inventaire du joueur dans le menu
+            // Pour un coffre simple (27 slots): inventaire joueur = slots 27-62
+            // Pour un grand coffre (54 slots): inventaire joueur = slots 54-89
+            val chestSize = when (handler) {
+                is GenericContainerScreenHandler -> handler.rows * 9
+                else -> 27  // Par defaut, coffre simple
+            }
+
+            // Parcourir les slots de l'inventaire du joueur dans le menu
+            for (i in chestSize until handler.slots.size) {
+                val slot = handler.slots[i]
+                val stack = slot.stack
+
+                if (!stack.isEmpty && (stack.item == Items.WATER_BUCKET || stack.item == Items.BUCKET)) {
+                    result.add(i)
+                    logger.debug("Seau trouve dans le slot $i du menu")
+                }
+            }
+
+            future.complete(result)
         }
 
-        return result
+        return try {
+            future.get(5, TimeUnit.SECONDS)
+        } catch (e: Exception) {
+            logger.error("Erreur lors de la recherche des seaux: ${e.message}")
+            emptyList()
+        }
     }
 
     /**
      * Trouve tous les slots contenant des seaux dans le coffre (pas l'inventaire joueur).
+     * Thread-safe: peut etre appele depuis n'importe quel thread.
      * @return Liste des index de slots contenant des seaux dans le coffre
      */
     fun findBucketSlotsInChest(): List<Int> {
-        val screen = client.currentScreen
-        if (screen !is net.minecraft.client.gui.screen.ingame.HandledScreen<*>) {
-            logger.warn("Aucun menu ouvert pour chercher les seaux dans le coffre")
-            return emptyList()
-        }
+        val future = CompletableFuture<List<Int>>()
 
-        val handler = screen.screenHandler ?: return emptyList()
-        val result = mutableListOf<Int>()
-
-        // Determiner la taille du coffre
-        val chestSize = when (handler) {
-            is GenericContainerScreenHandler -> handler.rows * 9
-            else -> 27  // Par defaut, coffre simple
-        }
-
-        // Parcourir les slots du coffre uniquement
-        for (i in 0 until chestSize) {
-            val slot = handler.slots[i]
-            val stack = slot.stack
-
-            if (!stack.isEmpty && (stack.item == Items.WATER_BUCKET || stack.item == Items.BUCKET)) {
-                result.add(i)
-                logger.debug("Seau trouve dans le coffre slot $i")
+        client.execute {
+            val screen = client.currentScreen
+            if (screen !is net.minecraft.client.gui.screen.ingame.HandledScreen<*>) {
+                logger.warn("Aucun menu ouvert pour chercher les seaux dans le coffre")
+                future.complete(emptyList())
+                return@execute
             }
+
+            val handler = screen.screenHandler
+            if (handler == null) {
+                future.complete(emptyList())
+                return@execute
+            }
+
+            val result = mutableListOf<Int>()
+
+            // Determiner la taille du coffre
+            val chestSize = when (handler) {
+                is GenericContainerScreenHandler -> handler.rows * 9
+                else -> 27  // Par defaut, coffre simple
+            }
+
+            // Parcourir les slots du coffre uniquement
+            for (i in 0 until chestSize) {
+                val slot = handler.slots[i]
+                val stack = slot.stack
+
+                if (!stack.isEmpty && (stack.item == Items.WATER_BUCKET || stack.item == Items.BUCKET)) {
+                    result.add(i)
+                    logger.debug("Seau trouve dans le coffre slot $i")
+                }
+            }
+
+            future.complete(result)
         }
 
-        return result
+        return try {
+            future.get(5, TimeUnit.SECONDS)
+        } catch (e: Exception) {
+            logger.error("Erreur lors de la recherche des seaux dans le coffre: ${e.message}")
+            emptyList()
+        }
     }
 
     /**
