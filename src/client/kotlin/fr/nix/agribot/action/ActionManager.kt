@@ -3,7 +3,10 @@ package fr.nix.agribot.action
 import fr.nix.agribot.menu.MenuDetector
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.option.KeyBinding
+import net.minecraft.util.ActionResult
 import net.minecraft.util.Hand
+import net.minecraft.util.hit.BlockHitResult
+import net.minecraft.util.hit.HitResult
 import org.slf4j.LoggerFactory
 
 /**
@@ -21,13 +24,83 @@ object ActionManager {
     private var sneakKeyHeld = false
 
     /**
-     * Simule un clic droit (utiliser/interagir).
-     * Equivalent a appuyer sur le bouton droit de la souris.
+     * Simule un clic droit (utiliser/interagir) comme un humain.
+     * Utilise la vraie methode doItemUse() de Minecraft via reflexion.
+     * C'est exactement ce que le jeu appelle quand un joueur fait un vrai clic.
      */
     fun rightClick() {
-        val options = client.options
-        pressKey(options.useKey)
-        logger.debug("Clic droit")
+        client.execute {
+            try {
+                // Trouver et appeler doItemUse() via reflexion
+                // C'est une methode privee de MinecraftClient
+                val doItemUseMethod = MinecraftClient::class.java.getDeclaredMethod("doItemUse")
+                doItemUseMethod.isAccessible = true
+                doItemUseMethod.invoke(client)
+                logger.debug("Clic droit via doItemUse()")
+            } catch (e: NoSuchMethodException) {
+                // Fallback: essayer avec le nom obfusque ou mappings differents
+                logger.warn("doItemUse() non trouve, utilisation de l'alternative")
+                rightClickFallback()
+            } catch (e: Exception) {
+                logger.error("Erreur lors du clic droit: ${e.message}")
+                rightClickFallback()
+            }
+        }
+    }
+
+    /**
+     * Methode de fallback pour le clic droit si doItemUse() n'est pas accessible.
+     * Reproduit le comportement de doItemUse() manuellement.
+     */
+    private fun rightClickFallback() {
+        val interactionManager = client.interactionManager ?: return
+        val player = client.player ?: return
+        val hitResult = client.crosshairTarget
+
+        if (hitResult == null) {
+            logger.debug("Pas de cible pour clic droit")
+            return
+        }
+
+        when (hitResult.type) {
+            HitResult.Type.BLOCK -> {
+                val blockHitResult = hitResult as BlockHitResult
+
+                // Interagir avec le bloc (comme un vrai clic droit)
+                val result = interactionManager.interactBlock(player, Hand.MAIN_HAND, blockHitResult)
+
+                if (result == ActionResult.SUCCESS) {
+                    // Swing le bras comme un vrai joueur
+                    player.swingHand(Hand.MAIN_HAND)
+                    logger.debug("Clic droit bloc - succes avec swing")
+                } else {
+                    // Si le bloc n'a pas consomme l'interaction, essayer d'utiliser l'item
+                    val itemResult = interactionManager.interactItem(player, Hand.MAIN_HAND)
+                    if (itemResult == ActionResult.SUCCESS) {
+                        player.swingHand(Hand.MAIN_HAND)
+                        logger.debug("Clic droit item - succes avec swing")
+                    } else {
+                        logger.debug("Clic droit - resultat: $result / item: $itemResult")
+                    }
+                }
+            }
+            HitResult.Type.ENTITY -> {
+                // Pour les entites, on utilise interactItem
+                val result = interactionManager.interactItem(player, Hand.MAIN_HAND)
+                if (result == ActionResult.SUCCESS) {
+                    player.swingHand(Hand.MAIN_HAND)
+                }
+                logger.debug("Clic droit entite - resultat: $result")
+            }
+            else -> {
+                // Pas de cible, essayer d'utiliser l'item en l'air
+                val result = interactionManager.interactItem(player, Hand.MAIN_HAND)
+                if (result == ActionResult.SUCCESS) {
+                    player.swingHand(Hand.MAIN_HAND)
+                }
+                logger.debug("Clic droit air - resultat: $result")
+            }
+        }
     }
 
     /**
