@@ -172,9 +172,12 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
         }
     }
 
-    override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
-        // Fond sombre sans flou (fillGradient au lieu de renderBackground)
+    override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        // Fond sombre opaque sans flou - remplace complètement le renderBackground par défaut
         context.fillGradient(0, 0, width, height, 0xC0101010.toInt(), 0xD0101010.toInt())
+    }
+
+    override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
 
         val centerX = width / 2
 
