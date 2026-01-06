@@ -178,8 +178,7 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
 
         // Titre section Stations
         val stationsTitleY = stationsStartY - 10
-        context.drawTextWithShadow(textRenderer, "Stations (scroll: molette)", centerX - 100, stationsTitleY, 0xFFFF55)
-        context.drawTextWithShadow(textRenderer, "${scrollOffset + 1}-${minOf(scrollOffset + visibleStations, 30)}/30", centerX + 70, stationsTitleY, 0x888888)
+        context.drawTextWithShadow(textRenderer, "Stations", centerX - 100, stationsTitleY, 0xFFFF55)
 
         // Labels des stations visibles
         for (i in 0 until visibleStations) {
