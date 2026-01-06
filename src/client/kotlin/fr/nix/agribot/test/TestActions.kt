@@ -19,6 +19,11 @@ object TestActions {
     /**
      * Test de la transition matin : depose 15 seaux dans le coffre (garde 1).
      * Se teleporte au coffre, ouvre le coffre, depose les seaux, ferme le coffre.
+     *
+     * Methode: Les seaux sont stackes, donc on doit:
+     * 1. Clic gauche sur le stack pour le prendre
+     * 2. 15 clics droits sur le premier slot du coffre pour deposer 15 seaux
+     * 3. Clic gauche sur le premier slot de la hotbar pour reposer le seau restant
      */
     fun testTransitionMatin() {
         thread(name = "test-transition-matin") {
@@ -42,24 +47,52 @@ object TestActions {
                 }
                 logger.info("Coffre ouvert")
 
-                // Etape 3: Deposer 15 seaux (garder 1)
-                val bucketSlots = InventoryManager.findBucketSlotsInChestMenu()
-                val toDeposit = maxOf(0, bucketSlots.size - 1)  // Garder 1 seau
-                val slotsToDeposit = bucketSlots.take(toDeposit)
-
-                logger.info("Depot de ${slotsToDeposit.size} seaux (sur ${bucketSlots.size})")
-                for (slot in slotsToDeposit) {
-                    ActionManager.shiftClickSlot(slot)
-                    Thread.sleep(150)  // Augmente pour laisser le temps a client.execute
+                // Etape 3: Trouver le stack de seaux
+                val bucketStack = InventoryManager.findBucketStackInChestMenu()
+                if (bucketStack == null) {
+                    logger.error("Aucun seau trouve dans l'inventaire")
+                    ChatManager.showActionBar("Aucun seau trouve!", "c")
+                    ActionManager.closeScreen()
+                    return@thread
                 }
 
-                Thread.sleep(1000)  // Augmente pour s'assurer que tous les transferts sont termines
+                val totalBuckets = bucketStack.count
+                val toDeposit = maxOf(0, totalBuckets - 1)  // Garder 1 seau
+                logger.info("Trouvé $totalBuckets seaux, depot de $toDeposit")
 
-                // Etape 4: Fermer le coffre
+                if (toDeposit == 0) {
+                    logger.warn("Pas assez de seaux pour deposer")
+                    ChatManager.showActionBar("Pas assez de seaux!", "c")
+                    ActionManager.closeScreen()
+                    return@thread
+                }
+
+                // Etape 4: Clic gauche sur le slot des seaux pour les prendre
+                logger.info("Prise du stack de seaux (slot ${bucketStack.slotIndex})")
+                ActionManager.leftClickSlot(bucketStack.slotIndex)
+                Thread.sleep(150)
+
+                // Etape 5: Clics droits sur le premier slot du coffre pour deposer
+                logger.info("Depot de $toDeposit seaux dans le coffre (slot 0)")
+                for (i in 1..toDeposit) {
+                    ActionManager.rightClickSlot(0)
+                    Thread.sleep(100)
+                }
+
+                Thread.sleep(200)
+
+                // Etape 6: Remettre le seau restant dans le premier slot de la hotbar
+                // Dans le menu coffre: hotbar = slots (chestSize + 27) a (chestSize + 35)
+                val hotbarFirstSlot = bucketStack.chestSize + 27
+                logger.info("Remise du seau restant dans la hotbar (slot $hotbarFirstSlot)")
+                ActionManager.leftClickSlot(hotbarFirstSlot)
+                Thread.sleep(150)
+
+                // Etape 7: Fermer le coffre
                 ActionManager.closeScreen()
                 logger.info("Coffre ferme")
 
-                ChatManager.showActionBar("Matin OK: ${slotsToDeposit.size} seaux deposes", "a")
+                ChatManager.showActionBar("Matin OK: $toDeposit seaux deposes", "a")
                 logger.info("=== TEST TRANSITION MATIN TERMINE ===")
 
             } catch (e: Exception) {

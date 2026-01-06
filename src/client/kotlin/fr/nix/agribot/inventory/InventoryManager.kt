@@ -17,6 +17,15 @@ data class BucketSlotInfo(
 )
 
 /**
+ * Donnees d'un stack de seaux dans le menu coffre.
+ */
+data class BucketStackInfo(
+    val slotIndex: Int,
+    val count: Int,
+    val chestSize: Int  // Taille du coffre pour calculer les autres slots
+)
+
+/**
  * Gestionnaire d'inventaire pour la hotbar.
  */
 object InventoryManager {
@@ -272,6 +281,57 @@ object InventoryManager {
 
         logger.warn("Aucun bloc de melon trouve dans le menu")
         return -1
+    }
+
+    /**
+     * Trouve le premier stack de seaux dans l'inventaire joueur quand le coffre est ouvert.
+     * Retourne les informations sur le slot, le nombre de seaux, et la taille du coffre.
+     * Thread-safe: peut etre appele depuis n'importe quel thread.
+     * @return BucketStackInfo ou null si aucun seau trouve
+     */
+    fun findBucketStackInChestMenu(): BucketStackInfo? {
+        val future = CompletableFuture<BucketStackInfo?>()
+
+        client.execute {
+            val screen = client.currentScreen
+            if (screen !is net.minecraft.client.gui.screen.ingame.HandledScreen<*>) {
+                logger.warn("Aucun menu ouvert pour chercher les seaux")
+                future.complete(null)
+                return@execute
+            }
+
+            val handler = screen.screenHandler
+            if (handler == null) {
+                future.complete(null)
+                return@execute
+            }
+
+            val chestSize = when (handler) {
+                is GenericContainerScreenHandler -> handler.rows * 9
+                else -> 27
+            }
+
+            // Parcourir les slots de l'inventaire du joueur dans le menu
+            for (i in chestSize until handler.slots.size) {
+                val slot = handler.slots[i]
+                val stack = slot.stack
+
+                if (!stack.isEmpty && (stack.item == Items.WATER_BUCKET || stack.item == Items.BUCKET)) {
+                    logger.info("Stack de ${stack.count} seaux trouve dans le slot $i")
+                    future.complete(BucketStackInfo(i, stack.count, chestSize))
+                    return@execute
+                }
+            }
+
+            future.complete(null)
+        }
+
+        return try {
+            future.get(5, TimeUnit.SECONDS)
+        } catch (e: Exception) {
+            logger.error("Erreur lors de la recherche du stack de seaux: ${e.message}")
+            null
+        }
     }
 
     /**
