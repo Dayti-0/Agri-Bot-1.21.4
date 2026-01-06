@@ -205,4 +205,39 @@ object InventoryManager {
         val player = client.player ?: return 0
         return player.inventory.mainHandStack.count
     }
+
+    /**
+     * Trouve le premier slot contenant des graines (ou tout item qui n'est pas un seau).
+     * @return Index du slot (0-8), ou -1 si aucun slot trouve
+     */
+    fun findSeedsSlot(): Int {
+        val player = client.player ?: return -1
+
+        for (i in 0..8) {
+            val stack = player.inventory.getStack(i)
+            // Chercher un slot non vide qui ne contient pas de seaux
+            if (!stack.isEmpty && stack.item != Items.WATER_BUCKET && stack.item != Items.BUCKET) {
+                logger.debug("Graines trouvees dans le slot ${i + 1}")
+                return i
+            }
+        }
+
+        logger.warn("Aucun slot avec graines trouve dans la hotbar")
+        return -1
+    }
+
+    /**
+     * Selectionne le slot contenant les graines.
+     * @return true si un slot a ete trouve et selectionne, false sinon
+     */
+    fun selectSeedsSlotAuto(): Boolean {
+        val slotIndex = findSeedsSlot()
+        if (slotIndex >= 0) {
+            selectSlot(slotIndex)
+            logger.info("Slot graines selectionne: ${slotIndex + 1}")
+            return true
+        }
+        logger.warn("Impossible de trouver les graines dans la hotbar")
+        return false
+    }
 }

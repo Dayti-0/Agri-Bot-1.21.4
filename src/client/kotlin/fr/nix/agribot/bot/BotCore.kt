@@ -232,7 +232,7 @@ object BotCore {
             }
             3 -> {
                 // Etape 4: Fermer le coffre
-                ActionManager.pressEscape()
+                ActionManager.closeScreen()
                 bucketManagementStep = 4
                 waitMs(500)
             }
@@ -268,11 +268,11 @@ object BotCore {
 
     private fun handleWaitingTeleport() {
         // Attente terminee, ouvrir la station
-        // Selectionner le slot des graines d'abord (slot 9 = touche 0)
-        InventoryManager.selectSlot(9)
+        // Selectionner le slot des graines d'abord (cherche automatiquement dans la hotbar)
+        InventoryManager.selectSeedsSlotAuto()
 
         stateData.state = BotState.OPENING_STATION
-        waitMs(200)
+        waitMs(100)
     }
 
     private fun handleOpeningStation() {
@@ -295,8 +295,9 @@ object BotCore {
     }
 
     private fun handleHarvesting() {
-        // Recolte: clic droit (fruits) puis clic gauche (plante)
-        ActionManager.rightClick()
+        // Recolte: clic droit sur le slot du fruit/melon dans le menu
+        // Le slot 0 correspond generalement au premier emplacement dans le menu de la station
+        ActionManager.rightClickSlot(0)
         waitMs(500)
 
         // Le prochain tick fera le clic gauche
