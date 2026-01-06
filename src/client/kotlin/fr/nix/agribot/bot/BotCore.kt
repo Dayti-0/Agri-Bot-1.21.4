@@ -34,6 +34,11 @@ object BotCore {
     // Sous-etats pour la gestion des seaux dans le coffre
     private var bucketManagementStep = 0
 
+    // Sous-etats pour la recolte
+    private var harvestingStep = 0
+    private var harvestingRetries = 0
+    private const val MAX_HARVESTING_RETRIES = 5
+
     /**
      * Initialise le bot et enregistre le tick handler.
      */
@@ -293,16 +298,43 @@ object BotCore {
     }
 
     private fun handleHarvesting() {
-        // Recolte: clic gauche uniquement
-        logger.info("Recolte - clic gauche")
-        ActionManager.leftClick()
-        waitMs(300)
-
-        // Fermer le menu de station
-        ActionManager.pressEscape()
-        waitMs(300)
-
-        stateData.state = BotState.PLANTING
+        when (harvestingStep) {
+            0 -> {
+                // Etape 1: Clic gauche pour recolter
+                logger.info("Recolte - clic gauche")
+                ActionManager.leftClick()
+                harvestingStep = 1
+                harvestingRetries = 0
+                waitMs(300)
+            }
+            1 -> {
+                // Etape 2: Verifier que le melon a disparu
+                val melonSlot = InventoryManager.findMelonSlotInMenu()
+                if (melonSlot < 0) {
+                    // Melon disparu, on peut fermer le menu
+                    logger.info("Melon recolte avec succes")
+                    harvestingStep = 2
+                } else {
+                    // Melon encore present, reessayer
+                    harvestingRetries++
+                    if (harvestingRetries >= MAX_HARVESTING_RETRIES) {
+                        logger.warn("Echec recolte apres $MAX_HARVESTING_RETRIES tentatives, on continue")
+                        harvestingStep = 2
+                    } else {
+                        logger.info("Melon encore present, retry ${harvestingRetries}/$MAX_HARVESTING_RETRIES")
+                        ActionManager.leftClick()
+                        waitMs(300)
+                    }
+                }
+            }
+            2 -> {
+                // Etape 3: Fermer le menu de station
+                ActionManager.pressEscape()
+                waitMs(300)
+                harvestingStep = 0  // Reset pour la prochaine station
+                stateData.state = BotState.PLANTING
+            }
+        }
     }
 
     private fun handlePlanting() {
