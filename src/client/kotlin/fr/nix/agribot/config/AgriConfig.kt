@@ -30,6 +30,7 @@ data class AgriConfig(
 
     // Parametres des seaux
     var lastBucketMode: String? = null, // "drop", "retrieve", ou "normal"
+    var lastTransitionPeriod: String? = null, // Periode de la derniere transition (ex: "2024-01-15-matin")
     var lastWaterRefillTime: Long? = null, // Timestamp du dernier remplissage
 
     // Delais (en millisecondes)
@@ -193,6 +194,22 @@ data class AgriConfig(
             timeInMinutes in 390..690 -> "drop"      // 6h30-11h30: jeter les seaux
             timeInMinutes > 690 -> "retrieve"        // Apres 11h30: recuperer
             else -> "normal"
+        }
+    }
+
+    /**
+     * Retourne l'identifiant de la periode actuelle (pour eviter les transitions repetees).
+     * Format: "YYYY-MM-DD-matin" ou "YYYY-MM-DD-aprem"
+     */
+    fun getCurrentPeriod(): String {
+        val now = java.time.LocalDateTime.now()
+        val date = now.toLocalDate().toString()
+        val timeInMinutes = now.hour * 60 + now.minute
+
+        return if (timeInMinutes in 390..690) {
+            "$date-matin"  // 6h30-11h30
+        } else {
+            "$date-aprem"  // Apres 11h30 ou avant 6h30
         }
     }
 
