@@ -5,6 +5,7 @@ import net.minecraft.client.MinecraftClient
 import net.minecraft.client.option.KeyBinding
 import net.minecraft.util.ActionResult
 import net.minecraft.util.Hand
+import net.minecraft.util.PlayerInput
 import net.minecraft.util.hit.BlockHitResult
 import net.minecraft.util.hit.HitResult
 import org.slf4j.LoggerFactory
@@ -147,11 +148,29 @@ object ActionManager {
             val options = client.options
             val player = client.player
 
+            // Forcer l'etat de sneak via PlayerInput (1.21.4+)
+            player?.let { p ->
+                val currentInput = p.input.playerInput
+                val newInput = PlayerInput(
+                    currentInput.forward,
+                    currentInput.backward,
+                    currentInput.left,
+                    currentInput.right,
+                    currentInput.jump,
+                    true,  // sneak = true
+                    currentInput.sprint
+                )
+                p.input.playerInput = newInput
+            }
+
+            // Forcer l'etat de sneak directement sur le joueur
+            player?.setSneaking(true)
+
             // Activer la touche sneak
             KeyBinding.setKeyPressed(options.sneakKey.defaultKey, true)
             sneakKeyHeld = true
 
-            logger.debug("Debut accroupissement - isSneaking: ${player?.isSneaking}")
+            logger.debug("Debut accroupissement - isSneaking: ${player?.isSneaking}, playerInput.sneak: ${player?.input?.playerInput?.sneak}")
         }
     }
 
@@ -164,11 +183,29 @@ object ActionManager {
             val options = client.options
             val player = client.player
 
+            // Desactiver l'etat de sneak via PlayerInput (1.21.4+)
+            player?.let { p ->
+                val currentInput = p.input.playerInput
+                val newInput = PlayerInput(
+                    currentInput.forward,
+                    currentInput.backward,
+                    currentInput.left,
+                    currentInput.right,
+                    currentInput.jump,
+                    false,  // sneak = false
+                    currentInput.sprint
+                )
+                p.input.playerInput = newInput
+            }
+
+            // Desactiver l'etat de sneak directement sur le joueur
+            player?.setSneaking(false)
+
             // Desactiver la touche sneak
             KeyBinding.setKeyPressed(options.sneakKey.defaultKey, false)
             sneakKeyHeld = false
 
-            logger.debug("Fin accroupissement - isSneaking: ${player?.isSneaking}")
+            logger.debug("Fin accroupissement - isSneaking: ${player?.isSneaking}, playerInput.sneak: ${player?.input?.playerInput?.sneak}")
         }
     }
 
