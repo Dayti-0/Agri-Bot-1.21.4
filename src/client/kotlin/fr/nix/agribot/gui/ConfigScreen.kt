@@ -3,6 +3,7 @@ package fr.nix.agribot.gui
 import fr.nix.agribot.AgriBotClient
 import fr.nix.agribot.config.AgriConfig
 import fr.nix.agribot.config.Plants
+import fr.nix.agribot.test.TestActions
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
 import net.minecraft.client.gui.widget.ButtonWidget
@@ -126,6 +127,28 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
         addDrawableChild(ButtonWidget.builder(Text.literal("Annuler")) { _ ->
             close()
         }.dimensions(centerX + 5, buttonY, 100, 20).build())
+
+        // === Boutons de test (en haut a droite) ===
+        val testButtonX = width - 110
+        val testButtonWidth = 100
+
+        // Test transition matin (deposer seaux)
+        addDrawableChild(ButtonWidget.builder(Text.literal("Test Matin")) { _ ->
+            close()
+            TestActions.testTransitionMatin()
+        }.dimensions(testButtonX, 15, testButtonWidth, 16).build())
+
+        // Test transition apres-midi (recuperer seaux)
+        addDrawableChild(ButtonWidget.builder(Text.literal("Test Aprem")) { _ ->
+            close()
+            TestActions.testTransitionApresMidi()
+        }.dimensions(testButtonX, 33, testButtonWidth, 16).build())
+
+        // Test remplissage eau
+        addDrawableChild(ButtonWidget.builder(Text.literal("Test /eau")) { _ ->
+            close()
+            TestActions.testRemplissageEau()
+        }.dimensions(testButtonX, 51, testButtonWidth, 16).build())
     }
 
     private fun updateVisibleFields() {
@@ -151,6 +174,9 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
 
         // Titre
         context.drawCenteredTextWithShadow(textRenderer, title, centerX, 15, 0xFFFFFF)
+
+        // Label section Tests (en haut a droite)
+        context.drawTextWithShadow(textRenderer, "Tests:", width - 110, 5, 0xFF5555)
 
         // Labels section Plante
         context.drawTextWithShadow(textRenderer, "Plante:", centerX - 150, 40, 0xAAAAAA)

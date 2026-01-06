@@ -293,4 +293,37 @@ object ActionManager {
     fun leftClickSlot(slotIndex: Int) {
         clickSlot(slotIndex, button = 0)
     }
+
+    /**
+     * Shift+clic sur un slot specifique dans le menu ouvert.
+     * Transfere l'item vers l'autre partie du menu (inventaire <-> coffre).
+     * @param slotIndex Index du slot dans le menu
+     */
+    fun shiftClickSlot(slotIndex: Int) {
+        val screen = client.currentScreen
+        if (screen !is net.minecraft.client.gui.screen.ingame.HandledScreen<*>) {
+            logger.warn("Aucun menu ouvert pour shift+cliquer sur le slot")
+            return
+        }
+
+        val handler = screen.screenHandler ?: return
+        val interactionManager = client.interactionManager ?: return
+        val player = client.player ?: return
+
+        // Verifier que le slot existe
+        if (slotIndex < 0 || slotIndex >= handler.slots.size) {
+            logger.warn("Index de slot invalide: $slotIndex (max: ${handler.slots.size - 1})")
+            return
+        }
+
+        // QUICK_MOVE = shift+clic pour transfert rapide
+        interactionManager.clickSlot(
+            handler.syncId,
+            slotIndex,
+            0,  // bouton gauche
+            net.minecraft.screen.slot.SlotActionType.QUICK_MOVE,
+            player
+        )
+        logger.debug("Shift+clic slot $slotIndex")
+    }
 }
