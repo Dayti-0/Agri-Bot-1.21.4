@@ -240,4 +240,34 @@ object InventoryManager {
         logger.warn("Impossible de trouver les graines dans la hotbar")
         return false
     }
+
+    /**
+     * Trouve le slot contenant un bloc de melon dans le menu ouvert.
+     * Utile pour detecter les fruits a recolter dans une station.
+     * @return Index du slot dans le menu, ou -1 si aucun melon trouve
+     */
+    fun findMelonSlotInMenu(): Int {
+        val screen = client.currentScreen
+        if (screen !is net.minecraft.client.gui.screen.ingame.HandledScreen<*>) {
+            logger.warn("Aucun menu ouvert pour chercher le melon")
+            return -1
+        }
+
+        val handler = screen.screenHandler ?: return -1
+
+        // Parcourir tous les slots du menu
+        for (i in 0 until handler.slots.size) {
+            val slot = handler.slots[i]
+            val stack = slot.stack
+
+            // Verifier si c'est un bloc de melon
+            if (!stack.isEmpty && stack.item == Items.MELON) {
+                logger.debug("Bloc de melon trouve dans le slot $i du menu")
+                return i
+            }
+        }
+
+        logger.warn("Aucun bloc de melon trouve dans le menu")
+        return -1
+    }
 }

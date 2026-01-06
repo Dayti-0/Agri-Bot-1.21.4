@@ -295,9 +295,18 @@ object BotCore {
     }
 
     private fun handleHarvesting() {
-        // Recolte: clic droit sur le slot du fruit/melon dans le menu
-        // Le slot 0 correspond generalement au premier emplacement dans le menu de la station
-        ActionManager.rightClickSlot(0)
+        // Recolte: clic droit sur le slot du bloc de melon dans le menu
+        // Detecter automatiquement le slot contenant le melon
+        val melonSlot = InventoryManager.findMelonSlotInMenu()
+
+        if (melonSlot >= 0) {
+            logger.info("Recolte du melon au slot $melonSlot")
+            ActionManager.rightClickSlot(melonSlot)
+        } else {
+            logger.warn("Aucun melon detecte, clic droit generique")
+            ActionManager.rightClick()
+        }
+
         waitMs(500)
 
         // Le prochain tick fera le clic gauche
