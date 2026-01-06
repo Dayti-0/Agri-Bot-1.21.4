@@ -209,13 +209,15 @@ object BotCore {
                         val toDeposit = BucketManager.getBucketsToDeposit()
                         if (toDeposit > 0) {
                             logger.info("Depot de $toDeposit seaux dans le coffre")
-                            // Shift+clic pour transferer les seaux
-                            // On selectionne d'abord un slot avec seaux
-                            if (InventoryManager.findAllBucketSlots().isNotEmpty()) {
-                                ActionManager.startSneaking()
-                                ActionManager.rightClick() // Shift+clic transfere le stack
-                                ActionManager.stopSneaking()
+                            // Trouver les slots des seaux dans l'inventaire du joueur (dans le menu)
+                            val bucketSlots = InventoryManager.findBucketSlotsInChestMenu()
+                            // Shift+clic sur les seaux a deposer (garder 1)
+                            val slotsToDeposit = bucketSlots.take(toDeposit)
+                            for (slot in slotsToDeposit) {
+                                ActionManager.shiftClickSlot(slot)
+                                Thread.sleep(100) // Petit delai entre chaque clic
                             }
+                            logger.info("${slotsToDeposit.size} seaux deposes")
                         }
                         bucketManagementStep = 3
                         waitMs(500)
@@ -223,10 +225,14 @@ object BotCore {
                     fr.nix.agribot.bucket.BucketMode.RETRIEVE -> {
                         // Apres-midi: recuperer les seaux du coffre
                         logger.info("Recuperation des seaux du coffre")
-                        // Shift+clic sur les seaux dans le coffre
-                        ActionManager.startSneaking()
-                        ActionManager.rightClick()
-                        ActionManager.stopSneaking()
+                        // Trouver les slots des seaux dans le coffre
+                        val bucketSlots = InventoryManager.findBucketSlotsInChest()
+                        // Shift+clic sur tous les seaux du coffre
+                        for (slot in bucketSlots) {
+                            ActionManager.shiftClickSlot(slot)
+                            Thread.sleep(100) // Petit delai entre chaque clic
+                        }
+                        logger.info("${bucketSlots.size} seaux recuperes")
                         bucketManagementStep = 3
                         waitMs(500)
                     }

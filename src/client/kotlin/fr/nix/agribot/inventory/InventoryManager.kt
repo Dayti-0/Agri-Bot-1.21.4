@@ -2,6 +2,7 @@ package fr.nix.agribot.inventory
 
 import net.minecraft.client.MinecraftClient
 import net.minecraft.item.Items
+import net.minecraft.screen.GenericContainerScreenHandler
 import org.slf4j.LoggerFactory
 
 /**
@@ -269,6 +270,77 @@ object InventoryManager {
 
         logger.warn("Aucun bloc de melon trouve dans le menu")
         return -1
+    }
+
+    /**
+     * Trouve tous les slots contenant des seaux (pleins ou vides) dans le menu du coffre ouvert.
+     * Retourne les slots de l'inventaire du joueur (pas ceux du coffre).
+     * @return Liste des index de slots contenant des seaux dans le menu
+     */
+    fun findBucketSlotsInChestMenu(): List<Int> {
+        val screen = client.currentScreen
+        if (screen !is net.minecraft.client.gui.screen.ingame.HandledScreen<*>) {
+            logger.warn("Aucun menu ouvert pour chercher les seaux")
+            return emptyList()
+        }
+
+        val handler = screen.screenHandler ?: return emptyList()
+        val result = mutableListOf<Int>()
+
+        // Determiner ou commence l'inventaire du joueur dans le menu
+        // Pour un coffre simple (27 slots): inventaire joueur = slots 27-62
+        // Pour un grand coffre (54 slots): inventaire joueur = slots 54-89
+        val chestSize = when (handler) {
+            is GenericContainerScreenHandler -> handler.rows * 9
+            else -> 27  // Par defaut, coffre simple
+        }
+
+        // Parcourir les slots de l'inventaire du joueur dans le menu
+        for (i in chestSize until handler.slots.size) {
+            val slot = handler.slots[i]
+            val stack = slot.stack
+
+            if (!stack.isEmpty && (stack.item == Items.WATER_BUCKET || stack.item == Items.BUCKET)) {
+                result.add(i)
+                logger.debug("Seau trouve dans le slot $i du menu")
+            }
+        }
+
+        return result
+    }
+
+    /**
+     * Trouve tous les slots contenant des seaux dans le coffre (pas l'inventaire joueur).
+     * @return Liste des index de slots contenant des seaux dans le coffre
+     */
+    fun findBucketSlotsInChest(): List<Int> {
+        val screen = client.currentScreen
+        if (screen !is net.minecraft.client.gui.screen.ingame.HandledScreen<*>) {
+            logger.warn("Aucun menu ouvert pour chercher les seaux dans le coffre")
+            return emptyList()
+        }
+
+        val handler = screen.screenHandler ?: return emptyList()
+        val result = mutableListOf<Int>()
+
+        // Determiner la taille du coffre
+        val chestSize = when (handler) {
+            is GenericContainerScreenHandler -> handler.rows * 9
+            else -> 27  // Par defaut, coffre simple
+        }
+
+        // Parcourir les slots du coffre uniquement
+        for (i in 0 until chestSize) {
+            val slot = handler.slots[i]
+            val stack = slot.stack
+
+            if (!stack.isEmpty && (stack.item == Items.WATER_BUCKET || stack.item == Items.BUCKET)) {
+                result.add(i)
+                logger.debug("Seau trouve dans le coffre slot $i")
+            }
+        }
+
+        return result
     }
 
     /**
