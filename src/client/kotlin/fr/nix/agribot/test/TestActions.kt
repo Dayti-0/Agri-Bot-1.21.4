@@ -23,7 +23,6 @@ object TestActions {
     fun testTransitionMatin() {
         thread(name = "test-transition-matin") {
             logger.info("=== TEST TRANSITION MATIN ===")
-            ChatManager.showActionBar("Test: Transition Matin", "e")
 
             try {
                 // Etape 1: TP au coffre
@@ -37,7 +36,6 @@ object TestActions {
 
                 if (!MenuDetector.waitForChestOpen(timeoutMs = 5000, stabilizationDelayMs = 2000)) {
                     logger.error("Echec ouverture coffre")
-                    ChatManager.showActionBar("Echec ouverture coffre!", "c")
                     return@thread
                 }
                 logger.info("Coffre ouvert")
@@ -58,13 +56,10 @@ object TestActions {
                 // Etape 4: Fermer le coffre
                 ActionManager.closeScreen()
                 logger.info("Coffre ferme")
-
-                ChatManager.showActionBar("Transition Matin OK: ${slotsToDeposit.size} seaux deposes", "a")
                 logger.info("=== TEST TRANSITION MATIN TERMINE ===")
 
             } catch (e: Exception) {
                 logger.error("Erreur test transition matin", e)
-                ChatManager.showActionBar("Erreur: ${e.message}", "c")
             }
         }
     }
@@ -76,7 +71,6 @@ object TestActions {
     fun testTransitionApresMidi() {
         thread(name = "test-transition-aprem") {
             logger.info("=== TEST TRANSITION APRES-MIDI ===")
-            ChatManager.showActionBar("Test: Transition Apres-midi", "e")
 
             try {
                 // Etape 1: TP au coffre
@@ -90,7 +84,6 @@ object TestActions {
 
                 if (!MenuDetector.waitForChestOpen(timeoutMs = 5000, stabilizationDelayMs = 2000)) {
                     logger.error("Echec ouverture coffre")
-                    ChatManager.showActionBar("Echec ouverture coffre!", "c")
                     return@thread
                 }
                 logger.info("Coffre ouvert")
@@ -109,13 +102,10 @@ object TestActions {
                 // Etape 4: Fermer le coffre
                 ActionManager.closeScreen()
                 logger.info("Coffre ferme")
-
-                ChatManager.showActionBar("Transition Aprem OK: ${bucketSlots.size} seaux recuperes", "a")
                 logger.info("=== TEST TRANSITION APRES-MIDI TERMINE ===")
 
             } catch (e: Exception) {
                 logger.error("Erreur test transition apres-midi", e)
-                ChatManager.showActionBar("Erreur: ${e.message}", "c")
             }
         }
     }
@@ -126,13 +116,11 @@ object TestActions {
     fun testRemplissageEau() {
         thread(name = "test-remplissage") {
             logger.info("=== TEST REMPLISSAGE EAU ===")
-            ChatManager.showActionBar("Test: Remplissage Eau", "e")
 
             try {
                 // Selectionner les seaux vides
                 if (!BucketManager.selectEmptyBuckets()) {
                     logger.warn("Pas de seaux vides a remplir")
-                    ChatManager.showActionBar("Pas de seaux vides!", "c")
                     return@thread
                 }
 
@@ -147,12 +135,11 @@ object TestActions {
                 // Verifier le resultat
                 BucketManager.refreshState()
                 val waterCount = BucketManager.state.waterBucketsCount
-                ChatManager.showActionBar("Remplissage OK: $waterCount seaux d'eau", "a")
+                logger.info("Remplissage termine: $waterCount seaux d'eau")
                 logger.info("=== TEST REMPLISSAGE EAU TERMINE ===")
 
             } catch (e: Exception) {
                 logger.error("Erreur test remplissage", e)
-                ChatManager.showActionBar("Erreur: ${e.message}", "c")
             }
         }
     }
