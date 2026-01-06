@@ -17,7 +17,8 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
 
     private val stationFields = mutableListOf<TextFieldWidget>()
     private lateinit var coffreField: TextFieldWidget
-    private lateinit var plantButton: ButtonWidget
+    private lateinit var plantLeftButton: ButtonWidget
+    private lateinit var plantRightButton: ButtonWidget
     private lateinit var boostField: TextFieldWidget
     private lateinit var waterDurationButton: ButtonWidget
 
@@ -41,13 +42,17 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
         selectedPlantIndex = plantNames.indexOf(config.selectedPlant)
         if (selectedPlantIndex == -1) selectedPlantIndex = 0
 
-        // Bouton selecteur de plante
-        plantButton = ButtonWidget.builder(Text.literal(plantNames[selectedPlantIndex])) { _ ->
-            // Cycle vers la prochaine plante
+        // Bouton fleche gauche
+        plantLeftButton = ButtonWidget.builder(Text.literal("<")) { _ ->
+            selectedPlantIndex = if (selectedPlantIndex > 0) selectedPlantIndex - 1 else plantNames.size - 1
+        }.dimensions(centerX - 150, startY, 20, 20).build()
+        addDrawableChild(plantLeftButton)
+
+        // Bouton fleche droite
+        plantRightButton = ButtonWidget.builder(Text.literal(">")) { _ ->
             selectedPlantIndex = (selectedPlantIndex + 1) % plantNames.size
-            plantButton.message = Text.literal(plantNames[selectedPlantIndex])
-        }.dimensions(centerX - 150, startY, 140, 20).build()
-        addDrawableChild(plantButton)
+        }.dimensions(centerX - 10, startY, 20, 20).build()
+        addDrawableChild(plantRightButton)
 
         // Champ boost
         boostField = TextFieldWidget(textRenderer, centerX + 10, startY, 60, 20, Text.literal("Boost"))
@@ -146,8 +151,12 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
         context.drawTextWithShadow(textRenderer, "Plante:", centerX - 150, 40, 0xAAAAAA)
         context.drawTextWithShadow(textRenderer, "Boost %:", centerX + 10, 40, 0xAAAAAA)
 
-        // Afficher le temps de croissance calcule
+        // Afficher le nom de la plante selectionnee au centre des fleches
         val selectedPlant = plantNames[selectedPlantIndex]
+        val plantNameX = centerX - 150 + 20 + (110 - textRenderer.getWidth(selectedPlant)) / 2
+        context.drawTextWithShadow(textRenderer, selectedPlant, plantNameX, 55, 0xFFFFFF)
+
+        // Afficher le temps de croissance calcule
         val plantData = Plants.get(selectedPlant)
         val boost = boostField.text.toFloatOrNull() ?: 0f
         if (plantData != null) {
