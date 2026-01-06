@@ -236,9 +236,8 @@ object BotCore {
                 waitMs(500)
             }
             4 -> {
-                // Etape 5: Sauvegarder le mode et passer aux stations
-                BucketManager.saveCurrentMode()
-                BucketManager.refreshState()
+                // Etape 5: Sauvegarder le mode ET la periode (transition complete)
+                BucketManager.saveTransitionComplete()
                 logger.info("Gestion seaux terminee")
                 stateData.state = BotState.TELEPORTING
             }

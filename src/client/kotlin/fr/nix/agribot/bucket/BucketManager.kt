@@ -216,10 +216,19 @@ object BucketManager {
 
     /**
      * Verifie si une transition de mode seaux est necessaire.
+     * La transition ne se fait qu'une seule fois par periode (matin ou apres-midi).
      */
     fun needsModeTransition(): Boolean {
         val currentMode = getCurrentMode()
         val lastMode = config.lastBucketMode
+        val currentPeriod = config.getCurrentPeriod()
+        val lastPeriod = config.lastTransitionPeriod
+
+        // Si on a deja fait une transition dans cette periode, pas besoin
+        if (currentPeriod == lastPeriod) {
+            logger.debug("Transition deja faite pour cette periode ($currentPeriod)")
+            return false
+        }
 
         return when {
             lastMode == null -> false  // Premier lancement, pas de transition
@@ -231,11 +240,22 @@ object BucketManager {
     }
 
     /**
-     * Sauvegarde le mode actuel.
+     * Sauvegarde le mode actuel (sans la periode de transition).
      */
     fun saveCurrentMode() {
         config.lastBucketMode = config.getBucketMode()
         config.save()
+    }
+
+    /**
+     * Sauvegarde le mode actuel ET la periode de transition.
+     * A appeler uniquement apres une vraie transition (MANAGING_BUCKETS).
+     */
+    fun saveTransitionComplete() {
+        config.lastBucketMode = config.getBucketMode()
+        config.lastTransitionPeriod = config.getCurrentPeriod()
+        config.save()
+        logger.info("Transition sauvegardee: mode=${config.lastBucketMode}, periode=${config.lastTransitionPeriod}")
     }
 
     /**
