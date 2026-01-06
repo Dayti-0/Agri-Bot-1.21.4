@@ -141,26 +141,42 @@ object ActionManager {
     /**
      * Active l'accroupissement (sneak).
      * Thread-safe: peut etre appele depuis n'importe quel thread.
+     * Force l'etat de sneak sur le joueur en plus de la touche.
      */
     fun startSneaking() {
         client.execute {
             val options = client.options
+            val player = client.player
+
+            // Activer la touche sneak
             KeyBinding.setKeyPressed(options.sneakKey.defaultKey, true)
             sneakKeyHeld = true
-            logger.debug("Debut accroupissement")
+
+            // Forcer l'etat de sneak sur le joueur (important pour que le serveur le reconnaisse)
+            player?.input?.sneaking = true
+
+            logger.debug("Debut accroupissement - isSneaking: ${player?.isSneaking}")
         }
     }
 
     /**
      * Desactive l'accroupissement.
      * Thread-safe: peut etre appele depuis n'importe quel thread.
+     * Desactive l'etat de sneak sur le joueur en plus de la touche.
      */
     fun stopSneaking() {
         client.execute {
             val options = client.options
+            val player = client.player
+
+            // Desactiver la touche sneak
             KeyBinding.setKeyPressed(options.sneakKey.defaultKey, false)
             sneakKeyHeld = false
-            logger.debug("Fin accroupissement")
+
+            // Desactiver l'etat de sneak sur le joueur
+            player?.input?.sneaking = false
+
+            logger.debug("Fin accroupissement - isSneaking: ${player?.isSneaking}")
         }
     }
 
