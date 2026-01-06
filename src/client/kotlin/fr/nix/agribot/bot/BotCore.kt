@@ -34,6 +34,11 @@ object BotCore {
     // Sous-etats pour la gestion des seaux dans le coffre
     private var bucketManagementStep = 0
 
+    // Sous-etats pour la recolte
+    private var harvestingStep = 0
+    private var harvestingRetries = 0
+    private const val MAX_HARVESTING_RETRIES = 5
+
     /**
      * Initialise le bot et enregistre le tick handler.
      */
@@ -140,6 +145,7 @@ object BotCore {
             BotState.FILLING_WATER -> handleFillingWater()
             BotState.REFILLING_BUCKETS -> handleRefillingBuckets()
             BotState.NEXT_STATION -> handleNextStation()
+            BotState.EMPTYING_REMAINING_BUCKETS -> handleEmptyingRemainingBuckets()
             BotState.DISCONNECTING -> handleDisconnecting()
             BotState.PAUSED -> handlePaused()
             BotState.ERROR -> handleError()
@@ -293,39 +299,52 @@ object BotCore {
     }
 
     private fun handleHarvesting() {
-        // Recolte: clic droit sur le slot du bloc de melon dans le menu
-        // Detecter automatiquement le slot contenant le melon
-        val melonSlot = InventoryManager.findMelonSlotInMenu()
-
-        if (melonSlot >= 0) {
-            logger.info("Recolte du melon au slot $melonSlot")
-            ActionManager.rightClickSlot(melonSlot)
-        } else {
-            logger.warn("Aucun melon detecte, clic droit generique")
-            ActionManager.rightClick()
+        when (harvestingStep) {
+            0 -> {
+                // Etape 1: Clic gauche pour recolter
+                logger.info("Recolte - clic gauche")
+                ActionManager.leftClick()
+                harvestingStep = 1
+                harvestingRetries = 0
+                waitMs(300)
+            }
+            1 -> {
+                // Etape 2: Verifier que le melon a disparu
+                val melonSlot = InventoryManager.findMelonSlotInMenu()
+                if (melonSlot < 0) {
+                    // Melon disparu, on peut fermer le menu
+                    logger.info("Melon recolte avec succes")
+                    harvestingStep = 2
+                } else {
+                    // Melon encore present, reessayer
+                    harvestingRetries++
+                    if (harvestingRetries >= MAX_HARVESTING_RETRIES) {
+                        logger.warn("Echec recolte apres $MAX_HARVESTING_RETRIES tentatives, on continue")
+                        harvestingStep = 2
+                    } else {
+                        logger.info("Melon encore present, retry ${harvestingRetries}/$MAX_HARVESTING_RETRIES")
+                        ActionManager.leftClick()
+                        waitMs(300)
+                    }
+                }
+            }
+            2 -> {
+                // Etape 3: Fermer le menu de station
+                ActionManager.pressEscape()
+                waitMs(300)
+                harvestingStep = 0  // Reset pour la prochaine station
+                stateData.state = BotState.PLANTING
+            }
         }
-
-        waitMs(500)
-
-        // Le prochain tick fera le clic gauche
-        stateData.state = BotState.PLANTING
-        waitMs(500)
     }
 
     private fun handlePlanting() {
-        // Clic gauche pour recolter
-        ActionManager.leftClick()
-        waitMs(300)
-
-        // Fermer le menu
-        ActionManager.pressEscape()
-        waitMs(300)
-
-        // Planter: shift + clic droit
+        // Planter: sneak + micro pause + clic droit + relacher sneak
+        logger.info("Plantation - sneak + clic droit")
         ActionManager.startSneaking()
-        waitMs(100)
+        waitMs(100)  // micro pause en sneak
         ActionManager.rightClick()
-        waitMs(300)
+        waitMs(100)
         ActionManager.stopSneaking()
 
         // Passer au remplissage d'eau si necessaire
@@ -402,10 +421,29 @@ object BotCore {
                 config.lastWaterRefillTime = System.currentTimeMillis() / 1000
                 config.save()
             }
-            stateData.state = BotState.DISCONNECTING
+            // Vider les seaux restants avant de terminer
+            stateData.state = BotState.EMPTYING_REMAINING_BUCKETS
         } else {
             stateData.state = BotState.TELEPORTING
             waitMs(800)
+        }
+    }
+
+    private fun handleEmptyingRemainingBuckets() {
+        // Vider tous les seaux d'eau restants dans la derniere station
+        BucketManager.refreshState()
+
+        if (BucketManager.hasWaterBuckets()) {
+            // Selectionner et vider un seau
+            if (BucketManager.selectWaterBucket()) {
+                logger.info("Vidage seau restant (${BucketManager.state.waterBucketsCount} restants)")
+                ActionManager.rightClick()
+                waitMs(4000)  // Delai long entre chaque seau (4 secondes)
+            }
+        } else {
+            // Plus de seaux d'eau, on peut terminer
+            logger.info("Tous les seaux ont ete vides")
+            stateData.state = BotState.DISCONNECTING
         }
     }
 
