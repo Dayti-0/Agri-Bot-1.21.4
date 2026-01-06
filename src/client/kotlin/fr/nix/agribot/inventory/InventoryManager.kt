@@ -284,6 +284,55 @@ object InventoryManager {
     }
 
     /**
+     * Trouve le premier slot vide dans le coffre.
+     * Thread-safe: peut etre appele depuis n'importe quel thread.
+     * @return Index du premier slot vide, ou -1 si aucun slot vide
+     */
+    fun findEmptySlotInChest(): Int {
+        val future = CompletableFuture<Int>()
+
+        client.execute {
+            val screen = client.currentScreen
+            if (screen !is net.minecraft.client.gui.screen.ingame.HandledScreen<*>) {
+                logger.warn("Aucun menu ouvert pour chercher un slot vide")
+                future.complete(-1)
+                return@execute
+            }
+
+            val handler = screen.screenHandler
+            if (handler == null) {
+                future.complete(-1)
+                return@execute
+            }
+
+            val chestSize = when (handler) {
+                is GenericContainerScreenHandler -> handler.rows * 9
+                else -> 27
+            }
+
+            // Parcourir les slots du coffre pour trouver un slot vide
+            for (i in 0 until chestSize) {
+                val slot = handler.slots[i]
+                if (slot.stack.isEmpty) {
+                    logger.debug("Slot vide trouve dans le coffre: $i")
+                    future.complete(i)
+                    return@execute
+                }
+            }
+
+            logger.warn("Aucun slot vide dans le coffre")
+            future.complete(-1)
+        }
+
+        return try {
+            future.get(5, TimeUnit.SECONDS)
+        } catch (e: Exception) {
+            logger.error("Erreur lors de la recherche d'un slot vide: ${e.message}")
+            -1
+        }
+    }
+
+    /**
      * Trouve le premier stack de seaux dans l'inventaire joueur quand le coffre est ouvert.
      * Retourne les informations sur le slot, le nombre de seaux, et la taille du coffre.
      * Thread-safe: peut etre appele depuis n'importe quel thread.

@@ -67,28 +67,37 @@ object TestActions {
                     return@thread
                 }
 
-                // Etape 4: Clic gauche sur le slot des seaux pour les prendre
-                logger.info("Prise du stack de seaux (slot ${bucketStack.slotIndex})")
-                ActionManager.leftClickSlot(bucketStack.slotIndex)
+                // Etape 4: Trouver un slot vide dans le coffre
+                val emptyChestSlot = InventoryManager.findEmptySlotInChest()
+                if (emptyChestSlot == -1) {
+                    logger.error("Aucun slot vide dans le coffre")
+                    ChatManager.showActionBar("Coffre plein!", "c")
+                    ActionManager.closeScreen()
+                    return@thread
+                }
+                logger.info("Slot vide trouve dans le coffre: $emptyChestSlot")
+
+                // Etape 5: Clic gauche sur le slot des seaux pour les prendre
+                val originalSlot = bucketStack.slotIndex
+                logger.info("Prise du stack de seaux (slot $originalSlot)")
+                ActionManager.leftClickSlot(originalSlot)
                 Thread.sleep(150)
 
-                // Etape 5: Clics droits sur le premier slot du coffre pour deposer
-                logger.info("Depot de $toDeposit seaux dans le coffre (slot 0)")
+                // Etape 6: Clics droits sur le slot vide du coffre pour deposer
+                logger.info("Depot de $toDeposit seaux dans le coffre (slot $emptyChestSlot)")
                 for (i in 1..toDeposit) {
-                    ActionManager.rightClickSlot(0)
+                    ActionManager.rightClickSlot(emptyChestSlot)
                     Thread.sleep(100)
                 }
 
                 Thread.sleep(200)
 
-                // Etape 6: Remettre le seau restant dans le premier slot de la hotbar
-                // Dans le menu coffre: hotbar = slots (chestSize + 27) a (chestSize + 35)
-                val hotbarFirstSlot = bucketStack.chestSize + 27
-                logger.info("Remise du seau restant dans la hotbar (slot $hotbarFirstSlot)")
-                ActionManager.leftClickSlot(hotbarFirstSlot)
+                // Etape 7: Remettre le seau restant dans le slot ORIGINAL
+                logger.info("Remise du seau restant dans le slot original ($originalSlot)")
+                ActionManager.leftClickSlot(originalSlot)
                 Thread.sleep(150)
 
-                // Etape 7: Fermer le coffre
+                // Etape 8: Fermer le coffre
                 ActionManager.closeScreen()
                 logger.info("Coffre ferme")
 
