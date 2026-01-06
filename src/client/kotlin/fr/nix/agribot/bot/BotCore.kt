@@ -301,12 +301,28 @@ object BotCore {
     private fun handleHarvesting() {
         when (harvestingStep) {
             0 -> {
-                // Etape 1: Clic gauche pour recolter
-                logger.info("Recolte - clic gauche")
-                ActionManager.leftClick()
-                harvestingStep = 1
-                harvestingRetries = 0
-                waitMs(300)
+                // Etape 1: Verifier d'abord s'il y a un melon a recolter
+                val melonSlot = InventoryManager.findMelonSlotInMenu()
+                if (melonSlot >= 0) {
+                    // Melon present, on clique pour recolter
+                    logger.info("Melon detecte - clic gauche pour recolter")
+                    ActionManager.leftClick()
+                    harvestingStep = 1
+                    harvestingRetries = 0
+                    waitMs(300)
+                } else {
+                    // Pas de melon - verifier si c'est une station vide (iron_bars presents)
+                    val ironBarsSlot = InventoryManager.findIronBarsSlotInMenu()
+                    if (ironBarsSlot >= 0) {
+                        // Barreaux de fer sans melon = pas de pousse, on ferme directement
+                        logger.info("Pas de melon mais barreaux de fer detectes - pas de recolte necessaire")
+                        harvestingStep = 2
+                    } else {
+                        // Ni melon ni barreaux de fer - situation inhabituelle, on ferme quand meme
+                        logger.warn("Ni melon ni barreaux de fer detectes - fermeture du menu")
+                        harvestingStep = 2
+                    }
+                }
             }
             1 -> {
                 // Etape 2: Verifier que le melon a disparu

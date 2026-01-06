@@ -270,4 +270,34 @@ object InventoryManager {
         logger.warn("Aucun bloc de melon trouve dans le menu")
         return -1
     }
+
+    /**
+     * Trouve le slot contenant des barreaux de fer dans le menu ouvert.
+     * Si les barreaux de fer sont presents sans melon, cela indique qu'il n'y a pas de pousse.
+     * @return Index du slot dans le menu, ou -1 si aucun barreau de fer trouve
+     */
+    fun findIronBarsSlotInMenu(): Int {
+        val screen = client.currentScreen
+        if (screen !is net.minecraft.client.gui.screen.ingame.HandledScreen<*>) {
+            logger.warn("Aucun menu ouvert pour chercher les barreaux de fer")
+            return -1
+        }
+
+        val handler = screen.screenHandler ?: return -1
+
+        // Parcourir tous les slots du menu
+        for (i in 0 until handler.slots.size) {
+            val slot = handler.slots[i]
+            val stack = slot.stack
+
+            // Verifier si c'est des barreaux de fer
+            if (!stack.isEmpty && stack.item == Items.IRON_BARS) {
+                logger.debug("Barreaux de fer trouves dans le slot $i du menu")
+                return i
+            }
+        }
+
+        logger.debug("Aucun barreau de fer trouve dans le menu")
+        return -1
+    }
 }
