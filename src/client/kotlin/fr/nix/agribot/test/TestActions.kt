@@ -50,10 +50,10 @@ object TestActions {
                 logger.info("Depot de ${slotsToDeposit.size} seaux (sur ${bucketSlots.size})")
                 for (slot in slotsToDeposit) {
                     ActionManager.shiftClickSlot(slot)
-                    Thread.sleep(100)
+                    Thread.sleep(150)  // Augmente pour laisser le temps a client.execute
                 }
 
-                Thread.sleep(500)
+                Thread.sleep(1000)  // Augmente pour s'assurer que tous les transferts sont termines
 
                 // Etape 4: Fermer le coffre
                 ActionManager.closeScreen()
@@ -101,10 +101,10 @@ object TestActions {
 
                 for (slot in bucketSlots) {
                     ActionManager.shiftClickSlot(slot)
-                    Thread.sleep(100)
+                    Thread.sleep(150)  // Augmente pour laisser le temps a client.execute
                 }
 
-                Thread.sleep(500)
+                Thread.sleep(1000)  // Augmente pour s'assurer que tous les transferts sont termines
 
                 // Etape 4: Fermer le coffre
                 ActionManager.closeScreen()

@@ -67,26 +67,32 @@ object ChatManager {
 
     /**
      * Affiche un message dans l'action bar du joueur (au-dessus de la hotbar).
+     * Thread-safe: peut etre appele depuis n'importe quel thread.
      * @param message Le message a afficher
      * @param color Code couleur (ex: "6" pour orange, "a" pour vert)
      */
     fun showActionBar(message: String, color: String = "6") {
-        client.player?.sendMessage(
-            net.minecraft.text.Text.literal("§${color}[AgriBot]§r $message"),
-            true
-        )
+        client.execute {
+            client.player?.sendMessage(
+                net.minecraft.text.Text.literal("§${color}[AgriBot]§r $message"),
+                true
+            )
+        }
     }
 
     /**
      * Affiche un message dans le chat local (visible uniquement par le joueur).
+     * Thread-safe: peut etre appele depuis n'importe quel thread.
      * @param message Le message a afficher
      * @param color Code couleur
      */
     fun showLocalMessage(message: String, color: String = "6") {
-        client.player?.sendMessage(
-            net.minecraft.text.Text.literal("§${color}[AgriBot]§r $message"),
-            false
-        )
+        client.execute {
+            client.player?.sendMessage(
+                net.minecraft.text.Text.literal("§${color}[AgriBot]§r $message"),
+                false
+            )
+        }
     }
 
     /**

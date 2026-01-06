@@ -41,42 +41,54 @@ object ActionManager {
 
     /**
      * Simule un maintien du clic droit.
+     * Thread-safe: peut etre appele depuis n'importe quel thread.
      */
     fun holdRightClick() {
-        val options = client.options
-        KeyBinding.setKeyPressed(options.useKey.defaultKey, true)
-        useKeyHeld = true
-        logger.debug("Maintien clic droit")
+        client.execute {
+            val options = client.options
+            KeyBinding.setKeyPressed(options.useKey.defaultKey, true)
+            useKeyHeld = true
+            logger.debug("Maintien clic droit")
+        }
     }
 
     /**
      * Relache le clic droit.
+     * Thread-safe: peut etre appele depuis n'importe quel thread.
      */
     fun releaseRightClick() {
-        val options = client.options
-        KeyBinding.setKeyPressed(options.useKey.defaultKey, false)
-        useKeyHeld = false
-        logger.debug("Relache clic droit")
+        client.execute {
+            val options = client.options
+            KeyBinding.setKeyPressed(options.useKey.defaultKey, false)
+            useKeyHeld = false
+            logger.debug("Relache clic droit")
+        }
     }
 
     /**
      * Active l'accroupissement (sneak).
+     * Thread-safe: peut etre appele depuis n'importe quel thread.
      */
     fun startSneaking() {
-        val options = client.options
-        KeyBinding.setKeyPressed(options.sneakKey.defaultKey, true)
-        sneakKeyHeld = true
-        logger.debug("Debut accroupissement")
+        client.execute {
+            val options = client.options
+            KeyBinding.setKeyPressed(options.sneakKey.defaultKey, true)
+            sneakKeyHeld = true
+            logger.debug("Debut accroupissement")
+        }
     }
 
     /**
      * Desactive l'accroupissement.
+     * Thread-safe: peut etre appele depuis n'importe quel thread.
      */
     fun stopSneaking() {
-        val options = client.options
-        KeyBinding.setKeyPressed(options.sneakKey.defaultKey, false)
-        sneakKeyHeld = false
-        logger.debug("Fin accroupissement")
+        client.execute {
+            val options = client.options
+            KeyBinding.setKeyPressed(options.sneakKey.defaultKey, false)
+            sneakKeyHeld = false
+            logger.debug("Fin accroupissement")
+        }
     }
 
     /**
@@ -99,30 +111,39 @@ object ActionManager {
 
     /**
      * Ferme l'ecran actuel (Escape).
+     * Thread-safe: peut etre appele depuis n'importe quel thread.
      */
     fun closeScreen() {
-        client.setScreen(null)
-        logger.debug("Fermeture ecran")
+        client.execute {
+            client.setScreen(null)
+            logger.debug("Fermeture ecran")
+        }
     }
 
     /**
      * Appuie sur Escape.
+     * Thread-safe: peut etre appele depuis n'importe quel thread.
      */
     fun pressEscape() {
-        client.player?.closeHandledScreen()
-        logger.debug("Touche Escape")
+        client.execute {
+            client.player?.closeHandledScreen()
+            logger.debug("Touche Escape")
+        }
     }
 
     /**
      * Simule une pression de touche unique.
+     * Thread-safe: peut etre appele depuis n'importe quel thread.
      */
     private fun pressKey(keyBinding: KeyBinding) {
-        KeyBinding.setKeyPressed(keyBinding.defaultKey, true)
-        KeyBinding.onKeyPressed(keyBinding.defaultKey)
-
-        // Relacher apres un tick
         client.execute {
-            KeyBinding.setKeyPressed(keyBinding.defaultKey, false)
+            KeyBinding.setKeyPressed(keyBinding.defaultKey, true)
+            KeyBinding.onKeyPressed(keyBinding.defaultKey)
+
+            // Relacher apres un tick
+            client.execute {
+                KeyBinding.setKeyPressed(keyBinding.defaultKey, false)
+            }
         }
     }
 
@@ -137,13 +158,15 @@ object ActionManager {
 
     /**
      * Drop tout le stack en main (Ctrl+Q).
+     * Thread-safe: peut etre appele depuis n'importe quel thread.
      */
     fun dropStack() {
-        // Simuler Ctrl+Q
-        val options = client.options
-        // Maintenir Ctrl n'est pas directement supporte, on utilise dropSelectedItem avec control=true
-        client.player?.dropSelectedItem(true)
-        logger.debug("Drop stack")
+        client.execute {
+            // Simuler Ctrl+Q
+            // Maintenir Ctrl n'est pas directement supporte, on utilise dropSelectedItem avec control=true
+            client.player?.dropSelectedItem(true)
+            logger.debug("Drop stack")
+        }
     }
 
     /**
@@ -200,82 +223,102 @@ object ActionManager {
 
     /**
      * Relache toutes les touches maintenues.
+     * Thread-safe: peut etre appele depuis n'importe quel thread.
      */
     fun releaseAllKeys() {
-        if (useKeyHeld) releaseRightClick()
-        if (sneakKeyHeld) stopSneaking()
-        if (attackKeyHeld) {
-            val options = client.options
-            KeyBinding.setKeyPressed(options.attackKey.defaultKey, false)
-            attackKeyHeld = false
+        client.execute {
+            if (useKeyHeld) {
+                val options = client.options
+                KeyBinding.setKeyPressed(options.useKey.defaultKey, false)
+                useKeyHeld = false
+            }
+            if (sneakKeyHeld) {
+                val options = client.options
+                KeyBinding.setKeyPressed(options.sneakKey.defaultKey, false)
+                sneakKeyHeld = false
+            }
+            if (attackKeyHeld) {
+                val options = client.options
+                KeyBinding.setKeyPressed(options.attackKey.defaultKey, false)
+                attackKeyHeld = false
+            }
+            logger.debug("Toutes les touches relachees")
         }
-        logger.debug("Toutes les touches relachees")
     }
 
     /**
      * Utilise l'item en main sur le bloc vise.
      * Methode alternative plus directe que simuler un clic.
+     * Thread-safe: peut etre appele depuis n'importe quel thread.
      */
     fun useItemOnTarget() {
-        val interactionManager = client.interactionManager ?: return
-        val player = client.player ?: return
-        val hitResult = client.crosshairTarget
+        client.execute {
+            val interactionManager = client.interactionManager ?: return@execute
+            val player = client.player ?: return@execute
+            val hitResult = client.crosshairTarget
 
-        if (hitResult != null && hitResult.type == net.minecraft.util.hit.HitResult.Type.BLOCK) {
-            val blockHitResult = hitResult as net.minecraft.util.hit.BlockHitResult
-            interactionManager.interactBlock(player, Hand.MAIN_HAND, blockHitResult)
-            logger.debug("Interaction avec bloc")
+            if (hitResult != null && hitResult.type == net.minecraft.util.hit.HitResult.Type.BLOCK) {
+                val blockHitResult = hitResult as net.minecraft.util.hit.BlockHitResult
+                interactionManager.interactBlock(player, Hand.MAIN_HAND, blockHitResult)
+                logger.debug("Interaction avec bloc")
+            }
         }
     }
 
     /**
      * Attaque/casse le bloc vise.
+     * Thread-safe: peut etre appele depuis n'importe quel thread.
      */
     fun attackTarget() {
-        val interactionManager = client.interactionManager ?: return
-        val player = client.player ?: return
-        val hitResult = client.crosshairTarget
+        client.execute {
+            val interactionManager = client.interactionManager ?: return@execute
+            val player = client.player ?: return@execute
+            val hitResult = client.crosshairTarget
 
-        if (hitResult != null && hitResult.type == net.minecraft.util.hit.HitResult.Type.BLOCK) {
-            val blockHitResult = hitResult as net.minecraft.util.hit.BlockHitResult
-            interactionManager.attackBlock(blockHitResult.blockPos, blockHitResult.side)
-            logger.debug("Attaque bloc")
+            if (hitResult != null && hitResult.type == net.minecraft.util.hit.HitResult.Type.BLOCK) {
+                val blockHitResult = hitResult as net.minecraft.util.hit.BlockHitResult
+                interactionManager.attackBlock(blockHitResult.blockPos, blockHitResult.side)
+                logger.debug("Attaque bloc")
+            }
         }
     }
 
     /**
      * Clique sur un slot specifique dans le menu ouvert.
+     * Thread-safe: peut etre appele depuis n'importe quel thread.
      * @param slotIndex Index du slot dans le menu (commence a 0)
      * @param button Bouton de la souris (0 = gauche, 1 = droit, 2 = milieu)
      * @param clickType Type de clic (PICKUP = clic normal)
      */
     fun clickSlot(slotIndex: Int, button: Int = 1) {
-        val screen = client.currentScreen
-        if (screen !is net.minecraft.client.gui.screen.ingame.HandledScreen<*>) {
-            logger.warn("Aucun menu ouvert pour cliquer sur le slot")
-            return
+        client.execute {
+            val screen = client.currentScreen
+            if (screen !is net.minecraft.client.gui.screen.ingame.HandledScreen<*>) {
+                logger.warn("Aucun menu ouvert pour cliquer sur le slot")
+                return@execute
+            }
+
+            val handler = screen.screenHandler ?: return@execute
+            val interactionManager = client.interactionManager ?: return@execute
+            val player = client.player ?: return@execute
+
+            // Verifier que le slot existe
+            if (slotIndex < 0 || slotIndex >= handler.slots.size) {
+                logger.warn("Index de slot invalide: $slotIndex (max: ${handler.slots.size - 1})")
+                return@execute
+            }
+
+            // Effectuer le clic sur le slot
+            // PICKUP = clic normal (0), QUICK_MOVE = shift+clic (1), etc.
+            interactionManager.clickSlot(
+                handler.syncId,
+                slotIndex,
+                button,
+                net.minecraft.screen.slot.SlotActionType.PICKUP,
+                player
+            )
+            logger.debug("Clic slot $slotIndex avec bouton $button")
         }
-
-        val handler = screen.screenHandler ?: return
-        val interactionManager = client.interactionManager ?: return
-        val player = client.player ?: return
-
-        // Verifier que le slot existe
-        if (slotIndex < 0 || slotIndex >= handler.slots.size) {
-            logger.warn("Index de slot invalide: $slotIndex (max: ${handler.slots.size - 1})")
-            return
-        }
-
-        // Effectuer le clic sur le slot
-        // PICKUP = clic normal (0), QUICK_MOVE = shift+clic (1), etc.
-        interactionManager.clickSlot(
-            handler.syncId,
-            slotIndex,
-            button,
-            net.minecraft.screen.slot.SlotActionType.PICKUP,
-            player
-        )
-        logger.debug("Clic slot $slotIndex avec bouton $button")
     }
 
     /**
@@ -297,33 +340,36 @@ object ActionManager {
     /**
      * Shift+clic sur un slot specifique dans le menu ouvert.
      * Transfere l'item vers l'autre partie du menu (inventaire <-> coffre).
+     * Thread-safe: peut etre appele depuis n'importe quel thread.
      * @param slotIndex Index du slot dans le menu
      */
     fun shiftClickSlot(slotIndex: Int) {
-        val screen = client.currentScreen
-        if (screen !is net.minecraft.client.gui.screen.ingame.HandledScreen<*>) {
-            logger.warn("Aucun menu ouvert pour shift+cliquer sur le slot")
-            return
+        client.execute {
+            val screen = client.currentScreen
+            if (screen !is net.minecraft.client.gui.screen.ingame.HandledScreen<*>) {
+                logger.warn("Aucun menu ouvert pour shift+cliquer sur le slot")
+                return@execute
+            }
+
+            val handler = screen.screenHandler ?: return@execute
+            val interactionManager = client.interactionManager ?: return@execute
+            val player = client.player ?: return@execute
+
+            // Verifier que le slot existe
+            if (slotIndex < 0 || slotIndex >= handler.slots.size) {
+                logger.warn("Index de slot invalide: $slotIndex (max: ${handler.slots.size - 1})")
+                return@execute
+            }
+
+            // QUICK_MOVE = shift+clic pour transfert rapide
+            interactionManager.clickSlot(
+                handler.syncId,
+                slotIndex,
+                0,  // bouton gauche
+                net.minecraft.screen.slot.SlotActionType.QUICK_MOVE,
+                player
+            )
+            logger.debug("Shift+clic slot $slotIndex")
         }
-
-        val handler = screen.screenHandler ?: return
-        val interactionManager = client.interactionManager ?: return
-        val player = client.player ?: return
-
-        // Verifier que le slot existe
-        if (slotIndex < 0 || slotIndex >= handler.slots.size) {
-            logger.warn("Index de slot invalide: $slotIndex (max: ${handler.slots.size - 1})")
-            return
-        }
-
-        // QUICK_MOVE = shift+clic pour transfert rapide
-        interactionManager.clickSlot(
-            handler.syncId,
-            slotIndex,
-            0,  // bouton gauche
-            net.minecraft.screen.slot.SlotActionType.QUICK_MOVE,
-            player
-        )
-        logger.debug("Shift+clic slot $slotIndex")
     }
 }
