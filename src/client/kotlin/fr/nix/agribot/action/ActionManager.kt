@@ -178,20 +178,24 @@ object ActionManager {
 
     /**
      * Ouvre un coffre/container avec clic droit et attend qu'il soit ouvert.
+     * @param timeoutMs Timeout pour la detection du menu
+     * @param stabilizationDelayMs Delai de stabilisation apres ouverture (default: 2000ms)
      * @return true si le coffre s'est ouvert, false sinon
      */
-    fun openChestAndWait(timeoutMs: Long = 5000): Boolean {
+    fun openChestAndWait(timeoutMs: Long = 5000, stabilizationDelayMs: Long = 2000): Boolean {
         rightClick()
-        return MenuDetector.waitForChestOpen(timeoutMs)
+        return MenuDetector.waitForChestOpen(timeoutMs, stabilizationDelayMs = stabilizationDelayMs)
     }
 
     /**
      * Ouvre un menu simple avec clic droit et attend qu'il soit ouvert.
+     * @param timeoutMs Timeout pour la detection du menu
+     * @param stabilizationDelayMs Delai de stabilisation apres ouverture (default: 2000ms)
      * @return true si le menu s'est ouvert, false sinon
      */
-    fun openMenuAndWait(timeoutMs: Long = 5000): Boolean {
+    fun openMenuAndWait(timeoutMs: Long = 5000, stabilizationDelayMs: Long = 2000): Boolean {
         rightClick()
-        return MenuDetector.waitForSimpleMenuOpen(timeoutMs)
+        return MenuDetector.waitForSimpleMenuOpen(timeoutMs, stabilizationDelayMs = stabilizationDelayMs)
     }
 
     /**

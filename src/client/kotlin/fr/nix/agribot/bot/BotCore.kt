@@ -182,12 +182,12 @@ object BotCore {
                 logger.info("Gestion seaux - Ouverture coffre")
                 ActionManager.rightClick()
 
-                // Attendre que le coffre soit ouvert (avec timeout de 5 secondes)
-                if (MenuDetector.waitForChestOpen(timeoutMs = 5000)) {
-                    logger.info("Coffre ouvert - Menu detecte")
+                // Attendre que le coffre soit ouvert et charge (timeout 5s + stabilisation 2s)
+                if (MenuDetector.waitForChestOpen(timeoutMs = 5000, stabilizationDelayMs = 2000)) {
+                    logger.info("Coffre ouvert et charge - Pret pour operations")
                     MenuDetector.debugCurrentMenu()
                     bucketManagementStep = 2
-                    waitMs(500) // Petit delai de stabilisation
+                    // Plus besoin de waitMs supplementaire, la stabilisation est geree
                 } else {
                     logger.warn("Echec ouverture coffre - Timeout")
                     ChatManager.showActionBar("Echec ouverture coffre!", "c")
@@ -279,12 +279,12 @@ object BotCore {
         // Clic droit pour ouvrir la station
         ActionManager.rightClick()
 
-        // Attendre que le menu de la station soit ouvert (avec timeout de 5 secondes)
-        if (MenuDetector.waitForSimpleMenuOpen(timeoutMs = 5000)) {
-            logger.info("Station ouverte - Menu detecte")
+        // Attendre que le menu de la station soit ouvert et charge (timeout 5s + stabilisation 2s)
+        if (MenuDetector.waitForSimpleMenuOpen(timeoutMs = 5000, stabilizationDelayMs = 2000)) {
+            logger.info("Station ouverte et chargee - Pret pour recolte")
             MenuDetector.debugCurrentMenu()
             stateData.state = BotState.HARVESTING
-            waitMs(500) // Petit delai de stabilisation
+            // Plus besoin de waitMs supplementaire, la stabilisation est geree
         } else {
             logger.warn("Echec ouverture station - Timeout")
             ChatManager.showActionBar("Echec ouverture station!", "c")

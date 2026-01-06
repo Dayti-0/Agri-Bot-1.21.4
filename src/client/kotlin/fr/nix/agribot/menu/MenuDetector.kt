@@ -120,20 +120,59 @@ object MenuDetector {
     }
 
     /**
+     * Verifie si le menu est completement charge (slots synchronises).
+     * @return true si le menu est charge et pret a etre utilise
+     */
+    fun isMenuFullyLoaded(): Boolean {
+        val screen = client.currentScreen
+        if (screen !is HandledScreen<*>) return false
+
+        val handler = screen.screenHandler ?: return false
+
+        // Verifier que les slots sont synchronises
+        // Un menu est considere charge si tous les slots sont initialises
+        val slots = handler.slots
+        if (slots.isEmpty()) return false
+
+        // Verifier que le syncId est valide (> 0 signifie synchronise avec le serveur)
+        return handler.syncId > 0
+    }
+
+    /**
      * Attend qu'un menu soit ouvert.
      *
      * @param timeoutMs Temps maximum d'attente en millisecondes
      * @param checkIntervalMs Intervalle entre chaque verification en millisecondes
+     * @param stabilizationDelayMs Delai supplementaire apres detection pour s'assurer que le menu est charge (default: 2000ms)
      * @return true si un menu s'est ouvert, false si timeout
      */
-    fun waitForMenuOpen(timeoutMs: Long = 5000, checkIntervalMs: Long = 50): Boolean {
+    fun waitForMenuOpen(
+        timeoutMs: Long = 5000,
+        checkIntervalMs: Long = 50,
+        stabilizationDelayMs: Long = 2000
+    ): Boolean {
         val startTime = System.currentTimeMillis()
 
         while (System.currentTimeMillis() - startTime < timeoutMs) {
             if (isMenuOpen()) {
                 val menuType = detectMenuType()
                 logger.debug("Menu detecte: $menuType")
-                return true
+
+                // Attendre que le menu soit completement charge
+                if (stabilizationDelayMs > 0) {
+                    logger.debug("Attente stabilisation menu (${stabilizationDelayMs}ms)...")
+                    Thread.sleep(stabilizationDelayMs)
+
+                    // Verifier que le menu est toujours ouvert et charge
+                    if (isMenuFullyLoaded()) {
+                        logger.debug("Menu completement charge et pret")
+                        return true
+                    } else {
+                        logger.warn("Menu non completement charge apres stabilisation")
+                    }
+                } else {
+                    return true
+                }
             }
             Thread.sleep(checkIntervalMs)
         }
@@ -147,15 +186,35 @@ object MenuDetector {
      *
      * @param timeoutMs Temps maximum d'attente en millisecondes
      * @param checkIntervalMs Intervalle entre chaque verification en millisecondes
+     * @param stabilizationDelayMs Delai supplementaire apres detection pour s'assurer que le menu est charge (default: 2000ms)
      * @return true si un coffre s'est ouvert, false si timeout
      */
-    fun waitForChestOpen(timeoutMs: Long = 5000, checkIntervalMs: Long = 50): Boolean {
+    fun waitForChestOpen(
+        timeoutMs: Long = 5000,
+        checkIntervalMs: Long = 50,
+        stabilizationDelayMs: Long = 2000
+    ): Boolean {
         val startTime = System.currentTimeMillis()
 
         while (System.currentTimeMillis() - startTime < timeoutMs) {
             if (isChestOrContainerOpen()) {
                 logger.debug("Coffre/container detecte")
-                return true
+
+                // Attendre que le menu soit completement charge
+                if (stabilizationDelayMs > 0) {
+                    logger.debug("Attente stabilisation coffre (${stabilizationDelayMs}ms)...")
+                    Thread.sleep(stabilizationDelayMs)
+
+                    // Verifier que le menu est toujours ouvert et charge
+                    if (isMenuFullyLoaded()) {
+                        logger.debug("Coffre completement charge et pret")
+                        return true
+                    } else {
+                        logger.warn("Coffre non completement charge apres stabilisation")
+                    }
+                } else {
+                    return true
+                }
             }
             Thread.sleep(checkIntervalMs)
         }
@@ -169,15 +228,35 @@ object MenuDetector {
      *
      * @param timeoutMs Temps maximum d'attente en millisecondes
      * @param checkIntervalMs Intervalle entre chaque verification en millisecondes
+     * @param stabilizationDelayMs Delai supplementaire apres detection pour s'assurer que le menu est charge (default: 2000ms)
      * @return true si un menu simple s'est ouvert, false si timeout
      */
-    fun waitForSimpleMenuOpen(timeoutMs: Long = 5000, checkIntervalMs: Long = 50): Boolean {
+    fun waitForSimpleMenuOpen(
+        timeoutMs: Long = 5000,
+        checkIntervalMs: Long = 50,
+        stabilizationDelayMs: Long = 2000
+    ): Boolean {
         val startTime = System.currentTimeMillis()
 
         while (System.currentTimeMillis() - startTime < timeoutMs) {
             if (isSimpleMenuOpen()) {
                 logger.debug("Menu simple detecte")
-                return true
+
+                // Attendre que le menu soit completement charge
+                if (stabilizationDelayMs > 0) {
+                    logger.debug("Attente stabilisation menu simple (${stabilizationDelayMs}ms)...")
+                    Thread.sleep(stabilizationDelayMs)
+
+                    // Verifier que le menu est toujours ouvert et charge
+                    if (isMenuFullyLoaded()) {
+                        logger.debug("Menu simple completement charge et pret")
+                        return true
+                    } else {
+                        logger.warn("Menu simple non completement charge apres stabilisation")
+                    }
+                } else {
+                    return true
+                }
             }
             Thread.sleep(checkIntervalMs)
         }
