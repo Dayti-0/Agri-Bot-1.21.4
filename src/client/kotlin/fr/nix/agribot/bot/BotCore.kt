@@ -80,8 +80,7 @@ object BotCore {
         logger.info("Plante: ${config.selectedPlant}")
         logger.info("========================================")
 
-        // Initialiser l'etat des seaux
-        BucketManager.refreshState()
+        // Log l'etat des seaux (refreshState appele dans logState)
         BucketManager.logState()
 
         stateData.apply {
