@@ -39,6 +39,9 @@ object BotCore {
     private var harvestingRetries = 0
     private const val MAX_HARVESTING_RETRIES = 5
 
+    // Sous-etats pour la plantation
+    private var plantingStep = 0
+
     /**
      * Initialise le bot et enregistre le tick handler.
      */
@@ -362,21 +365,38 @@ object BotCore {
 
     private fun handlePlanting() {
         // Planter: sneak + micro pause + clic droit + relacher sneak
-        logger.info("Plantation - sneak + clic droit")
-        ActionManager.startSneaking()
-        waitMs(100)  // micro pause en sneak
-        ActionManager.rightClick()
-        waitMs(100)
-        ActionManager.stopSneaking()
+        // Machine d'etat pour assurer les delais entre chaque action
+        when (plantingStep) {
+            0 -> {
+                // Etape 1: S'accroupir (sneak)
+                logger.info("Plantation - sneak")
+                ActionManager.startSneaking()
+                plantingStep = 1
+                waitMs(150)  // Attendre que le sneak soit bien actif
+            }
+            1 -> {
+                // Etape 2: Clic droit pour planter (en etant accroupi)
+                logger.info("Plantation - clic droit (en sneak)")
+                ActionManager.rightClick()
+                plantingStep = 2
+                waitMs(150)  // Attendre que l'action soit executee
+            }
+            2 -> {
+                // Etape 3: Se relever
+                logger.info("Plantation - fin sneak")
+                ActionManager.stopSneaking()
+                plantingStep = 0  // Reset pour la prochaine station
 
-        // Passer au remplissage d'eau si necessaire
-        if (stateData.needsWaterRefill) {
-            BucketManager.prepareForStation()
-            stateData.state = BotState.FILLING_WATER
-        } else {
-            stateData.state = BotState.NEXT_STATION
+                // Passer au remplissage d'eau si necessaire
+                if (stateData.needsWaterRefill) {
+                    BucketManager.prepareForStation()
+                    stateData.state = BotState.FILLING_WATER
+                } else {
+                    stateData.state = BotState.NEXT_STATION
+                }
+                waitMs(500)
+            }
         }
-        waitMs(500)
     }
 
     private fun handleFillingWater() {

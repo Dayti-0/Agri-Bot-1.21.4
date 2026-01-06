@@ -269,9 +269,9 @@ object TestActions {
                 // Etape 6: Planter la graine (sneak + clic droit)
                 logger.info("Plantation - sneak + clic droit")
                 ActionManager.startSneaking()
-                Thread.sleep(100)
+                Thread.sleep(150)  // Attendre que le sneak soit bien actif
                 ActionManager.rightClick()
-                Thread.sleep(100)
+                Thread.sleep(150)  // Attendre que l'action soit executee
                 ActionManager.stopSneaking()
 
                 ChatManager.showActionBar("Planter OK: $stationName", "a")
