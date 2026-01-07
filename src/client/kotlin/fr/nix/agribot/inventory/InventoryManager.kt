@@ -519,4 +519,106 @@ object InventoryManager {
         logger.debug("Aucun barreau de fer trouve dans le menu")
         return -1
     }
+
+    // ==================== METHODES POUR LA CONNEXION AUTOMATIQUE ====================
+
+    /**
+     * Trouve le slot contenant une boussole dans la hotbar.
+     * @return Index du slot (0-8), ou -1 si aucune boussole trouvee
+     */
+    fun findCompassSlotInHotbar(): Int {
+        val player = client.player ?: return -1
+
+        for (i in 0..8) {
+            val stack = player.inventory.getStack(i)
+            if (!stack.isEmpty && stack.item == Items.COMPASS) {
+                logger.debug("Boussole trouvee dans le slot ${i + 1}")
+                return i
+            }
+        }
+
+        logger.debug("Aucune boussole trouvee dans la hotbar")
+        return -1
+    }
+
+    /**
+     * Verifie si le joueur a une boussole dans la hotbar.
+     */
+    fun hasCompassInHotbar(): Boolean {
+        return findCompassSlotInHotbar() >= 0
+    }
+
+    /**
+     * Selectionne la boussole dans la hotbar.
+     * @return true si la boussole a ete selectionnee, false sinon
+     */
+    fun selectCompass(): Boolean {
+        val slot = findCompassSlotInHotbar()
+        if (slot >= 0) {
+            selectSlot(slot)
+            logger.info("Boussole selectionnee (slot ${slot + 1})")
+            return true
+        }
+        logger.warn("Impossible de selectionner la boussole: non trouvee")
+        return false
+    }
+
+    /**
+     * Trouve le slot contenant une hache en netherite dans le menu ouvert.
+     * Utilise pour detecter l'option de connexion au serveur de jeu.
+     * @return Index du slot dans le menu, ou -1 si aucune hache trouvee
+     */
+    fun findNetheriteAxeSlotInMenu(): Int {
+        val screen = client.currentScreen
+        if (screen !is net.minecraft.client.gui.screen.ingame.HandledScreen<*>) {
+            logger.warn("Aucun menu ouvert pour chercher la hache en netherite")
+            return -1
+        }
+
+        val handler = screen.screenHandler ?: return -1
+
+        // Parcourir tous les slots du menu
+        for (i in 0 until handler.slots.size) {
+            val slot = handler.slots[i]
+            val stack = slot.stack
+
+            // Verifier si c'est une hache en netherite
+            if (!stack.isEmpty && stack.item == Items.NETHERITE_AXE) {
+                logger.debug("Hache en netherite trouvee dans le slot $i du menu")
+                return i
+            }
+        }
+
+        logger.debug("Aucune hache en netherite trouvee dans le menu")
+        return -1
+    }
+
+    /**
+     * Verifie si le joueur a une carte dans l'inventaire.
+     * Une carte presente apres /login indique un captcha.
+     * @return true si une carte est presente
+     */
+    fun hasMapInInventory(): Boolean {
+        val player = client.player ?: return false
+
+        // Verifier la hotbar
+        for (i in 0..8) {
+            val stack = player.inventory.getStack(i)
+            if (!stack.isEmpty && stack.item == Items.FILLED_MAP) {
+                logger.debug("Carte trouvee dans la hotbar (slot ${i + 1})")
+                return true
+            }
+        }
+
+        // Verifier l'inventaire principal
+        for (i in 9..35) {
+            val stack = player.inventory.getStack(i)
+            if (!stack.isEmpty && stack.item == Items.FILLED_MAP) {
+                logger.debug("Carte trouvee dans l'inventaire (slot $i)")
+                return true
+            }
+        }
+
+        return false
+    }
 }

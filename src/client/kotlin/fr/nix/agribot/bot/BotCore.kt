@@ -56,6 +56,7 @@ object BotCore {
 
     /**
      * Demarre une nouvelle session de farming.
+     * Si le mot de passe est configure, lance d'abord la connexion automatique.
      */
     fun startSession() {
         if (stateData.state != BotState.IDLE && stateData.state != BotState.PAUSED) {
@@ -63,6 +64,34 @@ object BotCore {
             return
         }
 
+        // Verifier la connexion au serveur Minecraft
+        if (!ChatManager.isConnected()) {
+            ChatManager.showActionBar("Pas connecte au serveur!", "c")
+            return
+        }
+
+        // Si mot de passe configure, lancer la connexion automatique d'abord
+        if (config.loginPassword.isNotBlank()) {
+            logger.info("Mot de passe configure - demarrage connexion automatique")
+            ServerConnector.reset()
+            if (ServerConnector.startConnection()) {
+                stateData.state = BotState.CONNECTING
+                return
+            } else {
+                // Erreur lors du demarrage de la connexion
+                logger.warn("Erreur demarrage connexion: ${ServerConnector.errorMessage}")
+                return
+            }
+        }
+
+        // Pas de mot de passe, demarrer directement la session
+        startFarmingSession()
+    }
+
+    /**
+     * Demarre la session de farming proprement dite (apres connexion).
+     */
+    private fun startFarmingSession() {
         // Verifier la connexion
         if (!ChatManager.isConnected()) {
             ChatManager.showActionBar("Pas connecte au serveur!", "c")
@@ -173,6 +202,7 @@ object BotCore {
         // Machine d'etat
         when (stateData.state) {
             BotState.IDLE -> { /* Rien */ }
+            BotState.CONNECTING -> handleConnecting()
             BotState.MANAGING_BUCKETS -> handleManagingBuckets()
             BotState.TELEPORTING -> handleTeleporting()
             BotState.WAITING_TELEPORT -> handleWaitingTeleport()
@@ -206,6 +236,24 @@ object BotCore {
     }
 
     // ==================== HANDLERS ====================
+
+    private fun handleConnecting() {
+        // Deleguer au ServerConnector
+        ServerConnector.onTick()
+
+        // Verifier si la connexion est terminee
+        if (ServerConnector.isFinished()) {
+            if (ServerConnector.isConnected()) {
+                logger.info("Connexion automatique reussie - demarrage session farming")
+                startFarmingSession()
+            } else {
+                // Erreur de connexion
+                logger.error("Echec connexion automatique: ${ServerConnector.errorMessage}")
+                stateData.errorMessage = ServerConnector.errorMessage
+                stateData.state = BotState.ERROR
+            }
+        }
+    }
 
     private fun handleManagingBuckets() {
         // Gestion des seaux via le coffre (depot ou recuperation)
