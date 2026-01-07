@@ -44,6 +44,9 @@ object BotCore {
 
     // Sous-etats pour le remplissage des seaux
     private var refillingStep = 0
+    private var refillingCheckCount = 0
+    private const val MAX_REFILLING_CHECKS = 100  // 100 x 100ms = 10 secondes max
+    private const val REFILLING_CHECK_INTERVAL_MS = 100
 
     /**
      * Initialise le bot et enregistre le tick handler.
@@ -592,7 +595,8 @@ object BotCore {
                     logger.info("Seaux vides en main - execution de /eau")
                     BucketManager.fillBucketsWithCommand()
                     refillingStep = 2
-                    waitMs(3000)  // Attendre que /eau s'execute
+                    refillingCheckCount = 0  // Reset compteur de verifications
+                    waitMs(REFILLING_CHECK_INTERVAL_MS)  // Premiere verification rapide
                 } else {
                     // Les seaux ne sont pas encore en main, reessayer la selection
                     logger.warn("Seaux vides pas encore en main - reessai selection")
@@ -601,9 +605,29 @@ object BotCore {
                 }
             }
             2 -> {
-                // Etape 3: Retourner au remplissage d'eau
-                refillingStep = 0  // Reset pour la prochaine fois
-                stateData.state = BotState.FILLING_WATER
+                // Etape 3: Verifier activement que les seaux sont remplis
+                refillingCheckCount++
+                BucketManager.refreshState()
+
+                if (BucketManager.hasWaterBuckets()) {
+                    // Les seaux sont remplis!
+                    logger.info("Seaux remplis detectes apres ${refillingCheckCount * REFILLING_CHECK_INTERVAL_MS}ms (${BucketManager.state.waterBucketsCount} seaux d'eau)")
+                    refillingStep = 0  // Reset pour la prochaine fois
+                    refillingCheckCount = 0
+                    stateData.state = BotState.FILLING_WATER
+                } else if (refillingCheckCount >= MAX_REFILLING_CHECKS) {
+                    // Timeout atteint - continuer quand meme
+                    logger.warn("Timeout verification seaux apres ${MAX_REFILLING_CHECKS * REFILLING_CHECK_INTERVAL_MS}ms - seaux toujours vides, tentative de continuer")
+                    refillingStep = 0
+                    refillingCheckCount = 0
+                    stateData.state = BotState.FILLING_WATER
+                } else {
+                    // Continuer a attendre
+                    if (refillingCheckCount % 10 == 0) {
+                        logger.debug("Attente remplissage seaux... (${refillingCheckCount * REFILLING_CHECK_INTERVAL_MS}ms)")
+                    }
+                    waitMs(REFILLING_CHECK_INTERVAL_MS)
+                }
             }
         }
     }
