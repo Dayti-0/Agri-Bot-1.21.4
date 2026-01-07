@@ -61,7 +61,15 @@ data class BotStateData(
     var stationsCompleted: Int = 0,
     var needsWaterRefill: Boolean = false,
     var lastActionTime: Long = 0,
-    var errorMessage: String = ""
+    var errorMessage: String = "",
+
+    // Gestion des sessions de remplissage d'eau intermediaires
+    /** True si cette session est uniquement pour remplir l'eau (pas de recolte/plantation) */
+    var isWaterOnlySession: Boolean = false,
+    /** Nombre de sessions de remplissage encore necessaires avant la prochaine recolte */
+    var waterRefillsRemaining: Int = 0,
+    /** Timestamp de debut du cycle de croissance actuel (premiere plantation) */
+    var cycleStartTime: Long = 0
 ) {
     fun reset() {
         state = BotState.IDLE
@@ -69,5 +77,7 @@ data class BotStateData(
         stationsCompleted = 0
         lastActionTime = 0
         errorMessage = ""
+        isWaterOnlySession = false
+        waterRefillsRemaining = 0
     }
 }

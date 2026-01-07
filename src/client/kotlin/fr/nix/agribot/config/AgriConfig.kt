@@ -262,4 +262,109 @@ data class AgriConfig(
         val minutes = waterDurationMinutes % 60
         return if (minutes > 0) "${hours}h${minutes}" else "${hours}h"
     }
+
+    // ==================== GESTION DES SESSIONS DE REMPLISSAGE D'EAU ====================
+
+    /**
+     * Intervalle entre les remplissages d'eau (capacite - 1 minute de marge).
+     * Ex: capacite 5h (300 min) -> intervalle 299 min (4h59)
+     */
+    fun getWaterRefillIntervalMinutes(): Int {
+        return waterDurationMinutes - 1
+    }
+
+    /**
+     * Calcule le nombre de sessions de remplissage intermediaires necessaires.
+     * Ex: plante 12h, capacite 5h -> 2 sessions de remplissage avant la recolte
+     *
+     * @return Nombre de remplissages intermediaires (0 si le temps de croissance <= capacite)
+     */
+    fun calculateWaterRefillsNeeded(): Int {
+        val plantData = getSelectedPlantData() ?: return 0
+        val growthTimeMinutes = plantData.tempsTotalCroissance(growthBoost)
+        val waterInterval = getWaterRefillIntervalMinutes()
+
+        // Si le temps de croissance est inferieur ou egal a la capacite, pas besoin de remplissage intermediaire
+        if (growthTimeMinutes <= waterDurationMinutes) {
+            return 0
+        }
+
+        // Calcul: combien de fois l'eau va s'epuiser pendant la croissance
+        // Premier remplissage couvre [0, waterInterval]
+        // Chaque remplissage suivant couvre waterInterval de plus
+        var covered = waterInterval
+        var refills = 0
+        while (covered < growthTimeMinutes) {
+            refills++
+            covered += waterInterval
+        }
+
+        logger.info("Plante ${growthTimeMinutes}min, capacite ${waterDurationMinutes}min -> $refills remplissages intermediaires necessaires")
+        return refills
+    }
+
+    /**
+     * Calcule l'eau restante en minutes depuis le dernier remplissage.
+     *
+     * @return Minutes d'eau restantes, ou waterDurationMinutes si jamais rempli
+     */
+    fun getRemainingWaterMinutes(): Int {
+        if (lastWaterRefillTime == null) {
+            return 0 // Jamais rempli, pas d'eau
+        }
+
+        val currentTime = System.currentTimeMillis() / 1000
+        val secondsSinceRefill = currentTime - lastWaterRefillTime!!
+        val minutesSinceRefill = (secondsSinceRefill / 60).toInt()
+
+        val remaining = waterDurationMinutes - minutesSinceRefill
+        return maxOf(0, remaining)
+    }
+
+    /**
+     * Determine si on doit remplir l'eau lors du replantage.
+     * True si l'eau restante est insuffisante pour le prochain cycle complet.
+     *
+     * @return True si remplissage necessaire au replantage
+     */
+    fun shouldRefillWaterOnReplant(): Boolean {
+        val plantData = getSelectedPlantData() ?: return true
+        val growthTimeMinutes = plantData.tempsTotalCroissance(growthBoost)
+        val remainingWater = getRemainingWaterMinutes()
+
+        // Si l'eau restante ne couvre pas le temps jusqu'au premier remplissage necessaire
+        val waterInterval = getWaterRefillIntervalMinutes()
+        val firstIntervalNeeded = minOf(waterInterval, growthTimeMinutes)
+
+        val needsRefill = remainingWater < firstIntervalNeeded
+        logger.info("Replantage: eau restante ${remainingWater}min, besoin ${firstIntervalNeeded}min -> remplissage ${if (needsRefill) "necessaire" else "pas necessaire"}")
+        return needsRefill
+    }
+
+    /**
+     * Calcule la duree de la prochaine pause en secondes.
+     *
+     * @param waterRefillsRemaining Nombre de remplissages encore a faire avant la recolte
+     * @param cycleStartTime Timestamp du debut du cycle (premiere plantation)
+     * @return Duree de la pause en secondes
+     */
+    fun getNextPauseSeconds(waterRefillsRemaining: Int, cycleStartTime: Long): Int {
+        val plantData = getSelectedPlantData() ?: return 900 // 15 min par defaut
+        val growthTimeSeconds = plantData.tempsTotalEnSecondes(growthBoost)
+        val waterIntervalSeconds = getWaterRefillIntervalMinutes() * 60
+
+        if (waterRefillsRemaining <= 0) {
+            // Plus de remplissage a faire, attendre la fin de la croissance
+            val currentTime = System.currentTimeMillis() / 1000
+            val elapsedSeconds = (currentTime - cycleStartTime).toInt()
+            val remainingGrowthTime = growthTimeSeconds - elapsedSeconds
+
+            logger.info("Prochaine pause: fin de croissance dans ${remainingGrowthTime / 60}min")
+            return maxOf(60, remainingGrowthTime) // Minimum 1 minute
+        } else {
+            // Encore des remplissages a faire, pause = intervalle entre remplissages
+            logger.info("Prochaine pause: remplissage eau dans ${waterIntervalSeconds / 60}min ($waterRefillsRemaining restants)")
+            return waterIntervalSeconds
+        }
+    }
 }
