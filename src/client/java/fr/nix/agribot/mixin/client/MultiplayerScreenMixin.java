@@ -5,8 +5,8 @@ import fr.nix.agribot.bot.AutoStartManager;
 import fr.nix.agribot.config.AgriConfig;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.screen.TitleScreen;
 import net.minecraft.client.gui.screen.multiplayer.ConnectScreen;
+import net.minecraft.client.gui.screen.multiplayer.MultiplayerScreen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.network.ServerAddress;
 import net.minecraft.client.network.ServerInfo;
@@ -17,22 +17,22 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Mixin pour ajouter un bouton AgriBot sur l'ecran titre.
+ * Mixin pour ajouter un bouton AgriBot sur l'ecran multijoueur.
  */
-@Mixin(TitleScreen.class)
-public abstract class TitleScreenMixin extends Screen {
+@Mixin(MultiplayerScreen.class)
+public abstract class MultiplayerScreenMixin extends Screen {
 
-    protected TitleScreenMixin(Text title) {
+    protected MultiplayerScreenMixin(Text title) {
         super(title);
     }
 
     @Inject(method = "init", at = @At("TAIL"))
     private void addAgriBotButton(CallbackInfo ci) {
-        // Ajouter le bouton AgriBot en bas a gauche
+        // Ajouter le bouton AgriBot en haut a droite
         int buttonWidth = 100;
         int buttonHeight = 20;
-        int x = 10;
-        int y = this.height - 30;
+        int x = this.width - buttonWidth - 10;
+        int y = 10;
 
         this.addDrawableChild(ButtonWidget.builder(Text.literal("AgriBot"), button -> {
             connectAndStartBot();

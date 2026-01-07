@@ -5,7 +5,7 @@
 	"client": [
 		"ExampleClientMixin",
 		"ChatHudMixin",
-		"TitleScreenMixin"
+		"MultiplayerScreenMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1
