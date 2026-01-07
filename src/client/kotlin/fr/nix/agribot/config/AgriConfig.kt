@@ -13,6 +13,9 @@ data class AgriConfig(
     // Serveur
     val serverAddress: String = "play.survivalworld.fr",
 
+    // Mot de passe pour la connexion automatique (/login)
+    var loginPassword: String = "",
+
     // Plante selectionnee
     var selectedPlant: String = "Brocoli",
     var growthBoost: Float = 29f,

@@ -7,6 +7,9 @@ enum class BotState {
     /** Bot desactive */
     IDLE,
 
+    /** Connexion automatique au serveur de jeu en cours */
+    CONNECTING,
+
     /** En attente de connexion au serveur */
     WAITING_CONNECTION,
 

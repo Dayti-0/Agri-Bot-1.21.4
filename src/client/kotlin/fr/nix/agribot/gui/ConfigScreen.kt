@@ -18,6 +18,7 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
 
     private val stationFields = mutableListOf<TextFieldWidget>()
     private lateinit var coffreField: TextFieldWidget
+    private lateinit var passwordField: TextFieldWidget
     private lateinit var plantLeftButton: ButtonWidget
     private lateinit var plantRightButton: ButtonWidget
     private lateinit var boostField: TextFieldWidget
@@ -71,8 +72,17 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
         coffreField.setMaxLength(30)
         addDrawableChild(coffreField)
 
+        // === Section Mot de passe ===
+        val passwordY = coffreY + 28
+
+        // Mot de passe pour /login
+        passwordField = TextFieldWidget(textRenderer, centerX - 100, passwordY, 200, 20, Text.literal("Password"))
+        passwordField.text = config.loginPassword
+        passwordField.setMaxLength(50)
+        addDrawableChild(passwordField)
+
         // === Section Duree eau ===
-        val waterY = coffreY + 28
+        val waterY = passwordY + 28
 
         // Trouver l'index de la duree actuelle
         selectedWaterDurationIndex = AgriConfig.WATER_DURATIONS.indexOf(config.waterDurationMinutes)
@@ -208,8 +218,11 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
         // Label section Coffre
         context.drawTextWithShadow(textRenderer, "Home Coffre (seaux):", centerX - 100, 70, 0xAAAAAA)
 
+        // Label section Mot de passe
+        context.drawTextWithShadow(textRenderer, "Mot de passe /login:", centerX - 100, 98, 0xAAAAAA)
+
         // Label section Duree eau
-        context.drawTextWithShadow(textRenderer, "Duree eau stations:", centerX - 100, 103, 0xAAAAAA)
+        context.drawTextWithShadow(textRenderer, "Duree eau stations:", centerX - 100, 126, 0xAAAAAA)
 
         // Titre section Stations
         val stationsTitleY = stationsStartY - 10
@@ -248,6 +261,9 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
 
         // Sauvegarder le coffre
         config.homeCoffre = coffreField.text
+
+        // Sauvegarder le mot de passe
+        config.loginPassword = passwordField.text
 
         // Sauvegarder la duree d'eau
         config.waterDurationMinutes = AgriConfig.WATER_DURATIONS[selectedWaterDurationIndex]
