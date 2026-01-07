@@ -48,6 +48,18 @@ object BotCore {
     private const val MAX_REFILLING_CHECKS = 100  // 100 x 100ms = 10 secondes max
     private const val REFILLING_CHECK_INTERVAL_MS = 100
 
+    // Sous-etats pour l'ouverture des menus (non-bloquant)
+    private var menuOpenStep = 0
+    private var menuOpenRetries = 0
+    private const val MAX_MENU_OPEN_RETRIES = 50  // 50 x 100ms = 5 secondes max
+    private const val MENU_STABILIZATION_TICKS = 40  // 2 secondes de stabilisation (40 ticks)
+
+    // Sous-etats pour le versement d'eau (non-bloquant)
+    private var waterPouringStep = 0
+    private var waterPouringCheckCount = 0
+    private var waterBucketsBefore = 0
+    private const val MAX_WATER_POURING_CHECKS = 100  // 100 ticks = 5 secondes max
+
     /**
      * Initialise le bot et enregistre le tick handler.
      */
@@ -265,6 +277,10 @@ object BotCore {
         }
     }
 
+    // Variables pour la gestion des seaux dans le coffre (non-bloquant)
+    private var bucketSlotsToProcess = listOf<Int>()
+    private var bucketSlotIndex = 0
+
     private fun handleManagingBuckets() {
         // Gestion des seaux via le coffre (depot ou recuperation)
         val mode = BucketManager.getCurrentMode()
@@ -275,86 +291,105 @@ object BotCore {
                 logger.info("Gestion seaux - TP vers coffre: ${config.homeCoffre}")
                 ChatManager.teleportToHome(config.homeCoffre)
                 bucketManagementStep = 1
+                menuOpenStep = 0
+                menuOpenRetries = 0
                 waitMs(config.delayAfterTeleport)
             }
             1 -> {
-                // Etape 2: Ouvrir le coffre (clic droit)
-                // Verifier d'abord si un coffre est deja ouvert
-                if (MenuDetector.isChestOrContainerOpen()) {
-                    logger.info("Coffre deja ouvert - Pret pour operations")
-                    MenuDetector.debugCurrentMenu()
-                    bucketManagementStep = 2
-                    return
-                }
+                // Etape 2: Ouvrir le coffre (non-bloquant)
+                when (menuOpenStep) {
+                    0 -> {
+                        // Verifier d'abord si un coffre est deja ouvert
+                        if (MenuDetector.isChestOrContainerOpen()) {
+                            logger.info("Coffre deja ouvert - Pret pour operations")
+                            MenuDetector.debugCurrentMenu()
+                            bucketManagementStep = 2
+                            menuOpenStep = 0
+                            return
+                        }
 
-                logger.info("Gestion seaux - Ouverture coffre")
-                ActionManager.rightClick()
-
-                // Attendre que le coffre soit ouvert et charge (timeout 5s + stabilisation 2s)
-                if (MenuDetector.waitForChestOpen(timeoutMs = 5000, stabilizationDelayMs = 2000)) {
-                    logger.info("Coffre ouvert et charge - Pret pour operations")
-                    MenuDetector.debugCurrentMenu()
-                    bucketManagementStep = 2
-                    // Plus besoin de waitMs supplementaire, la stabilisation est geree
-                } else {
-                    // Verifier une derniere fois si le coffre est ouvert avant d'afficher l'erreur
-                    if (MenuDetector.isChestOrContainerOpen()) {
-                        logger.info("Coffre finalement ouvert - Pret pour operations")
-                        MenuDetector.debugCurrentMenu()
-                        bucketManagementStep = 2
-                    } else {
-                        logger.warn("Echec ouverture coffre - Timeout")
-                        ChatManager.showActionBar("Echec ouverture coffre!", "c")
-                        // Reessayer l'ouverture
-                        bucketManagementStep = 1
-                        waitMs(1000)
+                        logger.info("Gestion seaux - Ouverture coffre")
+                        ActionManager.rightClick()
+                        menuOpenStep = 1
+                        menuOpenRetries = 0
+                        wait(2)  // Attendre 2 ticks avant de verifier
+                    }
+                    1 -> {
+                        // Attendre que le coffre soit ouvert
+                        if (MenuDetector.isChestOrContainerOpen()) {
+                            logger.debug("Coffre detecte - attente stabilisation")
+                            menuOpenStep = 2
+                            wait(MENU_STABILIZATION_TICKS)  // Stabilisation
+                        } else {
+                            menuOpenRetries++
+                            if (menuOpenRetries >= MAX_MENU_OPEN_RETRIES) {
+                                logger.warn("Echec ouverture coffre - Timeout")
+                                ChatManager.showActionBar("Echec ouverture coffre!", "c")
+                                menuOpenStep = 0
+                                waitMs(1000)  // Reessayer apres 1s
+                            } else {
+                                wait(2)  // Verifier toutes les 100ms
+                            }
+                        }
+                    }
+                    2 -> {
+                        // Stabilisation terminee, verifier que le coffre est toujours ouvert
+                        if (MenuDetector.isChestOrContainerOpen()) {
+                            logger.info("Coffre ouvert et charge - Pret pour operations")
+                            MenuDetector.debugCurrentMenu()
+                            bucketManagementStep = 2
+                            menuOpenStep = 0
+                        } else {
+                            logger.warn("Coffre ferme pendant stabilisation - Reessai")
+                            menuOpenStep = 0
+                            waitMs(500)
+                        }
                     }
                 }
             }
             2 -> {
-                // Etape 3: Deposer ou recuperer les seaux selon le mode
+                // Etape 3: Preparer les slots a traiter
                 when (mode) {
                     fr.nix.agribot.bucket.BucketMode.MORNING -> {
-                        // Matin: deposer 15 seaux (garder 1)
                         val toDeposit = BucketManager.getBucketsToDeposit()
                         if (toDeposit > 0) {
                             logger.info("Depot de $toDeposit seaux dans le coffre")
-                            // Trouver les slots des seaux dans l'inventaire du joueur (dans le menu)
                             val bucketSlots = InventoryManager.findBucketSlotsInChestMenu()
-                            // Shift+clic sur les seaux a deposer (garder 1)
-                            val slotsToDeposit = bucketSlots.take(toDeposit)
-                            for (slot in slotsToDeposit) {
-                                ActionManager.shiftClickSlot(slot)
-                                Thread.sleep(100) // Petit delai entre chaque clic
-                            }
-                            logger.info("${slotsToDeposit.size} seaux deposes")
+                            bucketSlotsToProcess = bucketSlots.take(toDeposit)
+                            bucketSlotIndex = 0
+                            bucketManagementStep = 3
+                        } else {
+                            bucketManagementStep = 4
                         }
-                        bucketManagementStep = 3
-                        waitMs(500)
                     }
                     fr.nix.agribot.bucket.BucketMode.RETRIEVE, fr.nix.agribot.bucket.BucketMode.NORMAL -> {
-                        // Apres-midi/nuit: recuperer les seaux du coffre
                         logger.info("Recuperation des seaux du coffre")
-                        // Trouver les slots des seaux dans le coffre
-                        val bucketSlots = InventoryManager.findBucketSlotsInChest()
-                        // Shift+clic sur tous les seaux du coffre
-                        for (slot in bucketSlots) {
-                            ActionManager.shiftClickSlot(slot)
-                            Thread.sleep(100) // Petit delai entre chaque clic
-                        }
-                        logger.info("${bucketSlots.size} seaux recuperes")
+                        bucketSlotsToProcess = InventoryManager.findBucketSlotsInChest()
+                        bucketSlotIndex = 0
                         bucketManagementStep = 3
-                        waitMs(500)
                     }
                 }
             }
             3 -> {
-                // Etape 4: Fermer le coffre
-                ActionManager.closeScreen()
-                bucketManagementStep = 4
-                waitMs(500)
+                // Etape 3b: Traiter les slots un par un (non-bloquant)
+                if (bucketSlotIndex < bucketSlotsToProcess.size) {
+                    val slot = bucketSlotsToProcess[bucketSlotIndex]
+                    ActionManager.shiftClickSlot(slot)
+                    bucketSlotIndex++
+                    wait(2)  // 100ms entre chaque clic
+                } else {
+                    logger.info("${bucketSlotsToProcess.size} seaux traites")
+                    bucketManagementStep = 4
+                    waitMs(300)
+                }
             }
             4 -> {
+                // Etape 4: Fermer le coffre
+                ActionManager.closeScreen()
+                bucketManagementStep = 5
+                waitMs(500)
+            }
+            5 -> {
                 // Etape 5: Sauvegarder le mode ET la periode (transition complete)
                 BucketManager.saveTransitionComplete()
                 logger.info("Gestion seaux terminee")
@@ -403,35 +438,55 @@ object BotCore {
     }
 
     private fun handleOpeningStation() {
-        // Verifier d'abord si un menu est deja ouvert (peut arriver si le timeout precedent etait faux)
-        if (MenuDetector.isSimpleMenuOpen()) {
-            logger.info("Station deja ouverte - Pret pour recolte")
-            MenuDetector.debugCurrentMenu()
-            stateData.state = BotState.HARVESTING
-            return
-        }
+        // Ouverture de la station (non-bloquant)
+        when (menuOpenStep) {
+            0 -> {
+                // Verifier d'abord si un menu est deja ouvert
+                if (MenuDetector.isSimpleMenuOpen()) {
+                    logger.info("Station deja ouverte - Pret pour recolte")
+                    MenuDetector.debugCurrentMenu()
+                    stateData.state = BotState.HARVESTING
+                    menuOpenStep = 0
+                    return
+                }
 
-        // Clic droit pour ouvrir la station
-        ActionManager.rightClick()
-
-        // Attendre que le menu de la station soit ouvert et charge (timeout 5s + stabilisation 2s)
-        if (MenuDetector.waitForSimpleMenuOpen(timeoutMs = 5000, stabilizationDelayMs = 2000)) {
-            logger.info("Station ouverte et chargee - Pret pour recolte")
-            MenuDetector.debugCurrentMenu()
-            stateData.state = BotState.HARVESTING
-            // Plus besoin de waitMs supplementaire, la stabilisation est geree
-        } else {
-            // Verifier une derniere fois si le menu est ouvert avant d'afficher l'erreur
-            if (MenuDetector.isSimpleMenuOpen()) {
-                logger.info("Station finalement ouverte - Pret pour recolte")
-                MenuDetector.debugCurrentMenu()
-                stateData.state = BotState.HARVESTING
-            } else {
-                logger.warn("Echec ouverture station - Timeout")
-                ChatManager.showActionBar("Echec ouverture station!", "c")
-                // Reessayer l'ouverture
-                stateData.state = BotState.OPENING_STATION
-                waitMs(1000)
+                // Clic droit pour ouvrir la station
+                logger.info("Ouverture station - clic droit")
+                ActionManager.rightClick()
+                menuOpenStep = 1
+                menuOpenRetries = 0
+                wait(2)  // Attendre 2 ticks avant de verifier
+            }
+            1 -> {
+                // Attendre que le menu soit ouvert
+                if (MenuDetector.isSimpleMenuOpen()) {
+                    logger.debug("Station detectee - attente stabilisation")
+                    menuOpenStep = 2
+                    wait(MENU_STABILIZATION_TICKS)  // Stabilisation
+                } else {
+                    menuOpenRetries++
+                    if (menuOpenRetries >= MAX_MENU_OPEN_RETRIES) {
+                        logger.warn("Echec ouverture station - Timeout")
+                        ChatManager.showActionBar("Echec ouverture station!", "c")
+                        menuOpenStep = 0
+                        waitMs(1000)  // Reessayer apres 1s
+                    } else {
+                        wait(2)  // Verifier toutes les 100ms
+                    }
+                }
+            }
+            2 -> {
+                // Stabilisation terminee, verifier que le menu est toujours ouvert
+                if (MenuDetector.isSimpleMenuOpen()) {
+                    logger.info("Station ouverte et chargee - Pret pour recolte")
+                    MenuDetector.debugCurrentMenu()
+                    stateData.state = BotState.HARVESTING
+                    menuOpenStep = 0
+                } else {
+                    logger.warn("Station fermee pendant stabilisation - Reessai")
+                    menuOpenStep = 0
+                    waitMs(500)
+                }
             }
         }
     }
@@ -538,38 +593,85 @@ object BotCore {
     }
 
     private fun handleFillingWater() {
-        // Verifier si station pleine
-        if (BucketManager.isStationFull()) {
-            logger.info("Station pleine apres ${BucketManager.state.bucketsUsedThisStation} seaux")
-            stateData.state = BotState.NEXT_STATION
-            return
-        }
+        // Machine d'etat pour le remplissage (non-bloquant)
+        when (waterPouringStep) {
+            0 -> {
+                // Etape 0: Verifications initiales
+                // Verifier si station pleine
+                if (BucketManager.isStationFull()) {
+                    logger.info("Station pleine apres ${BucketManager.state.bucketsUsedThisStation} seaux")
+                    waterPouringStep = 0
+                    stateData.state = BotState.NEXT_STATION
+                    return
+                }
 
-        // Verifier si on a des seaux d'eau
-        if (!BucketManager.hasWaterBuckets()) {
-            // Besoin de remplir les seaux vides
-            if (BucketManager.hasEmptyBuckets()) {
-                stateData.state = BotState.REFILLING_BUCKETS
-            } else {
-                // Plus de seaux du tout
-                logger.warn("Plus de seaux disponibles!")
-                stateData.state = BotState.NEXT_STATION
+                // Verifier si on a des seaux d'eau
+                if (!BucketManager.hasWaterBuckets()) {
+                    // Besoin de remplir les seaux vides
+                    if (BucketManager.hasEmptyBuckets()) {
+                        waterPouringStep = 0
+                        stateData.state = BotState.REFILLING_BUCKETS
+                    } else {
+                        // Plus de seaux du tout
+                        logger.warn("Plus de seaux disponibles!")
+                        waterPouringStep = 0
+                        stateData.state = BotState.NEXT_STATION
+                    }
+                    return
+                }
+
+                // Limite de securite
+                if (BucketManager.state.bucketsUsedThisStation >= 50) {
+                    logger.warn("Limite de seaux atteinte")
+                    waterPouringStep = 0
+                    stateData.state = BotState.NEXT_STATION
+                    return
+                }
+
+                // Selectionner un seau d'eau
+                if (BucketManager.selectWaterBucket()) {
+                    waterPouringStep = 1
+                    wait(4)  // 200ms avant le clic
+                }
             }
-            return
-        }
+            1 -> {
+                // Etape 1: Faire le clic droit et sauvegarder l'etat
+                waterBucketsBefore = InventoryManager.countWaterBucketsInHotbar()
+                ActionManager.rightClick()
 
-        // Selectionner un seau d'eau et le vider
-        if (BucketManager.selectWaterBucket()) {
-            waitMs(200)
-            BucketManager.pourWaterBucket()
-            // Utiliser le delai adaptatif pour le prochain seau
-            waitMs(BucketManager.getAdaptiveDelay().toInt())
-        }
+                // Ajouter l'animation du bras
+                MinecraftClient.getInstance().execute {
+                    MinecraftClient.getInstance().player?.swingHand(net.minecraft.util.Hand.MAIN_HAND)
+                }
 
-        // Limite de securite
-        if (BucketManager.state.bucketsUsedThisStation >= 50) {
-            logger.warn("Limite de seaux atteinte")
-            stateData.state = BotState.NEXT_STATION
+                waterPouringCheckCount = 0
+                waterPouringStep = 2
+                wait(2)  // Verifier apres 100ms
+            }
+            2 -> {
+                // Etape 2: Attendre que le seau soit consomme (non-bloquant)
+                val waterBucketsAfter = InventoryManager.countWaterBucketsInHotbar()
+
+                if (waterBucketsAfter < waterBucketsBefore) {
+                    // Seau consomme avec succes
+                    BucketManager.state.bucketsUsedThisStation++
+                    logger.debug("Seau vide (${BucketManager.state.bucketsUsedThisStation} cette station)")
+                    waterPouringStep = 0
+                    // Utiliser le delai adaptatif pour le prochain seau
+                    waitMs(BucketManager.getAdaptiveDelay().toInt())
+                } else {
+                    waterPouringCheckCount++
+                    if (waterPouringCheckCount >= MAX_WATER_POURING_CHECKS) {
+                        // Timeout - continuer quand meme
+                        logger.warn("Seau non consomme apres timeout - on continue")
+                        BucketManager.state.bucketsUsedThisStation++
+                        waterPouringStep = 0
+                        waitMs(500)
+                    } else {
+                        wait(2)  // Verifier toutes les 100ms
+                    }
+                }
+            }
         }
     }
 
