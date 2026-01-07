@@ -307,8 +307,8 @@ object BotCore {
                         bucketManagementStep = 3
                         waitMs(500)
                     }
-                    fr.nix.agribot.bucket.BucketMode.RETRIEVE -> {
-                        // Apres-midi: recuperer les seaux du coffre
+                    fr.nix.agribot.bucket.BucketMode.RETRIEVE, fr.nix.agribot.bucket.BucketMode.NORMAL -> {
+                        // Apres-midi/nuit: recuperer les seaux du coffre
                         logger.info("Recuperation des seaux du coffre")
                         // Trouver les slots des seaux dans le coffre
                         val bucketSlots = InventoryManager.findBucketSlotsInChest()
@@ -320,9 +320,6 @@ object BotCore {
                         logger.info("${bucketSlots.size} seaux recuperes")
                         bucketManagementStep = 3
                         waitMs(500)
-                    }
-                    else -> {
-                        bucketManagementStep = 3
                     }
                 }
             }

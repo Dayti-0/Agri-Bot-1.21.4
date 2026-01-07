@@ -216,26 +216,39 @@ object BucketManager {
 
     /**
      * Verifie si une transition de mode seaux est necessaire.
-     * La transition ne se fait qu'une seule fois par periode (matin ou apres-midi).
+     * Verifie le nombre de seaux dans l'inventaire et ajuste selon la plage horaire:
+     * - Matin (6h30-11h30): doit avoir 1 seau, sinon deposer l'excedent
+     * - Apres-midi/nuit: doit avoir 16 seaux, sinon recuperer du coffre
      */
     fun needsModeTransition(): Boolean {
         val currentMode = getCurrentMode()
-        val lastMode = config.lastBucketMode
-        val currentPeriod = config.getCurrentPeriod()
-        val lastPeriod = config.lastTransitionPeriod
+        refreshState()
+        val currentBuckets = state.totalBuckets
+        val targetBuckets = getBucketsToKeep()
 
-        // Si on a deja fait une transition dans cette periode, pas besoin
-        if (currentPeriod == lastPeriod) {
-            logger.debug("Transition deja faite pour cette periode ($currentPeriod)")
-            return false
-        }
+        logger.info("Verification seaux: mode=$currentMode, actuels=$currentBuckets, cible=$targetBuckets")
 
-        return when {
-            lastMode == null -> false  // Premier lancement, pas de transition
-            lastMode == "normal" && currentMode == BucketMode.MORNING -> true
-            lastMode == "drop" && currentMode == BucketMode.RETRIEVE -> true
-            lastMode == "retrieve" && currentMode == BucketMode.MORNING -> true
-            else -> false
+        return when (currentMode) {
+            BucketMode.MORNING -> {
+                // Matin: on doit avoir 1 seau. Si on en a plus, deposer
+                if (currentBuckets > targetBuckets) {
+                    logger.info("Trop de seaux ($currentBuckets > $targetBuckets) - depot necessaire")
+                    true
+                } else {
+                    logger.info("Nombre de seaux OK pour le matin ($currentBuckets)")
+                    false
+                }
+            }
+            BucketMode.RETRIEVE, BucketMode.NORMAL -> {
+                // Apres-midi/nuit: on doit avoir 16 seaux. Si on en a moins, recuperer
+                if (currentBuckets < targetBuckets) {
+                    logger.info("Pas assez de seaux ($currentBuckets < $targetBuckets) - recuperation necessaire")
+                    true
+                } else {
+                    logger.info("Nombre de seaux OK pour l'apres-midi/nuit ($currentBuckets)")
+                    false
+                }
+            }
         }
     }
 
