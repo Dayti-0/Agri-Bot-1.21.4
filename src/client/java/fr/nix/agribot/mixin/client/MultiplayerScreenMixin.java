@@ -28,11 +28,11 @@ public abstract class MultiplayerScreenMixin extends Screen {
 
     @Inject(method = "init", at = @At("TAIL"))
     private void addAgriBotButton(CallbackInfo ci) {
-        // Ajouter le bouton AgriBot en bas a gauche
+        // Ajouter le bouton AgriBot en haut a droite
         int buttonWidth = 100;
         int buttonHeight = 20;
-        int x = 10;
-        int y = this.height - 30;
+        int x = this.width - buttonWidth - 10;
+        int y = 10;
 
         this.addDrawableChild(ButtonWidget.builder(Text.literal("AgriBot"), button -> {
             connectAndStartBot();
