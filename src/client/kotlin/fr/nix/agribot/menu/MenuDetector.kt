@@ -205,12 +205,14 @@ object MenuDetector {
                     logger.debug("Attente stabilisation coffre (${stabilizationDelayMs}ms)...")
                     Thread.sleep(stabilizationDelayMs)
 
-                    // Verifier que le menu est toujours ouvert et charge
-                    if (isMenuFullyLoaded()) {
-                        logger.debug("Coffre completement charge et pret")
+                    // Verifier que le menu est toujours ouvert
+                    // On ne verifie plus isMenuFullyLoaded() car c'est trop strict
+                    // et peut retourner false meme si le menu est fonctionnel
+                    if (isChestOrContainerOpen()) {
+                        logger.debug("Coffre ouvert et pret")
                         return true
                     } else {
-                        logger.warn("Coffre non completement charge apres stabilisation")
+                        logger.warn("Coffre ferme pendant stabilisation")
                     }
                 } else {
                     return true
@@ -247,12 +249,14 @@ object MenuDetector {
                     logger.debug("Attente stabilisation menu simple (${stabilizationDelayMs}ms)...")
                     Thread.sleep(stabilizationDelayMs)
 
-                    // Verifier que le menu est toujours ouvert et charge
-                    if (isMenuFullyLoaded()) {
-                        logger.debug("Menu simple completement charge et pret")
+                    // Verifier que le menu est toujours ouvert
+                    // On ne verifie plus isMenuFullyLoaded() car c'est trop strict
+                    // et peut retourner false meme si le menu est fonctionnel
+                    if (isSimpleMenuOpen()) {
+                        logger.debug("Menu simple ouvert et pret")
                         return true
                     } else {
-                        logger.warn("Menu simple non completement charge apres stabilisation")
+                        logger.warn("Menu simple ferme pendant stabilisation")
                     }
                 } else {
                     return true

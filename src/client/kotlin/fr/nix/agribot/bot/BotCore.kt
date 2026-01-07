@@ -42,6 +42,9 @@ object BotCore {
     // Sous-etats pour la plantation
     private var plantingStep = 0
 
+    // Sous-etats pour le remplissage des seaux
+    private var refillingStep = 0
+
     /**
      * Initialise le bot et enregistre le tick handler.
      */
@@ -124,6 +127,10 @@ object BotCore {
         logger.info("Stations: ${stations.size}")
         logger.info("Plante: ${config.selectedPlant}")
         logger.info("========================================")
+
+        // Reinitialiser le delai adaptatif au debut de chaque session
+        // pour ignorer le premier seau (qui a souvent un lag)
+        BucketManager.resetAdaptiveDelay()
 
         // Log l'etat des seaux (refreshState appele dans logState)
         BucketManager.logState()
@@ -269,6 +276,14 @@ object BotCore {
             }
             1 -> {
                 // Etape 2: Ouvrir le coffre (clic droit)
+                // Verifier d'abord si un coffre est deja ouvert
+                if (MenuDetector.isChestOrContainerOpen()) {
+                    logger.info("Coffre deja ouvert - Pret pour operations")
+                    MenuDetector.debugCurrentMenu()
+                    bucketManagementStep = 2
+                    return
+                }
+
                 logger.info("Gestion seaux - Ouverture coffre")
                 ActionManager.rightClick()
 
@@ -279,11 +294,18 @@ object BotCore {
                     bucketManagementStep = 2
                     // Plus besoin de waitMs supplementaire, la stabilisation est geree
                 } else {
-                    logger.warn("Echec ouverture coffre - Timeout")
-                    ChatManager.showActionBar("Echec ouverture coffre!", "c")
-                    // Reessayer l'ouverture
-                    bucketManagementStep = 1
-                    waitMs(1000)
+                    // Verifier une derniere fois si le coffre est ouvert avant d'afficher l'erreur
+                    if (MenuDetector.isChestOrContainerOpen()) {
+                        logger.info("Coffre finalement ouvert - Pret pour operations")
+                        MenuDetector.debugCurrentMenu()
+                        bucketManagementStep = 2
+                    } else {
+                        logger.warn("Echec ouverture coffre - Timeout")
+                        ChatManager.showActionBar("Echec ouverture coffre!", "c")
+                        // Reessayer l'ouverture
+                        bucketManagementStep = 1
+                        waitMs(1000)
+                    }
                 }
             }
             2 -> {
@@ -378,6 +400,14 @@ object BotCore {
     }
 
     private fun handleOpeningStation() {
+        // Verifier d'abord si un menu est deja ouvert (peut arriver si le timeout precedent etait faux)
+        if (MenuDetector.isSimpleMenuOpen()) {
+            logger.info("Station deja ouverte - Pret pour recolte")
+            MenuDetector.debugCurrentMenu()
+            stateData.state = BotState.HARVESTING
+            return
+        }
+
         // Clic droit pour ouvrir la station
         ActionManager.rightClick()
 
@@ -388,11 +418,18 @@ object BotCore {
             stateData.state = BotState.HARVESTING
             // Plus besoin de waitMs supplementaire, la stabilisation est geree
         } else {
-            logger.warn("Echec ouverture station - Timeout")
-            ChatManager.showActionBar("Echec ouverture station!", "c")
-            // Reessayer l'ouverture
-            stateData.state = BotState.OPENING_STATION
-            waitMs(1000)
+            // Verifier une derniere fois si le menu est ouvert avant d'afficher l'erreur
+            if (MenuDetector.isSimpleMenuOpen()) {
+                logger.info("Station finalement ouverte - Pret pour recolte")
+                MenuDetector.debugCurrentMenu()
+                stateData.state = BotState.HARVESTING
+            } else {
+                logger.warn("Echec ouverture station - Timeout")
+                ChatManager.showActionBar("Echec ouverture station!", "c")
+                // Reessayer l'ouverture
+                stateData.state = BotState.OPENING_STATION
+                waitMs(1000)
+            }
         }
     }
 
@@ -534,20 +571,41 @@ object BotCore {
     }
 
     private fun handleRefillingBuckets() {
-        // Selectionner les seaux vides
-        if (!BucketManager.selectEmptyBuckets()) {
-            logger.warn("Pas de seaux vides a remplir")
-            stateData.state = BotState.NEXT_STATION
-            return
+        // Machine d'etat pour gerer les etapes du remplissage des seaux
+        // Cela evite d'envoyer /eau avant que les seaux soient bien selectionnes
+        when (refillingStep) {
+            0 -> {
+                // Etape 1: Selectionner les seaux vides
+                if (!BucketManager.selectEmptyBuckets()) {
+                    logger.warn("Pas de seaux vides a remplir")
+                    refillingStep = 0  // Reset pour la prochaine fois
+                    stateData.state = BotState.NEXT_STATION
+                    return
+                }
+                logger.info("Seaux vides selectionnes - attente avant /eau")
+                refillingStep = 1
+                waitMs(300)  // Attendre que la selection soit bien effective
+            }
+            1 -> {
+                // Etape 2: Verifier que les seaux vides sont bien en main et envoyer /eau
+                if (InventoryManager.isHoldingEmptyBucket()) {
+                    logger.info("Seaux vides en main - execution de /eau")
+                    BucketManager.fillBucketsWithCommand()
+                    refillingStep = 2
+                    waitMs(3000)  // Attendre que /eau s'execute
+                } else {
+                    // Les seaux ne sont pas encore en main, reessayer la selection
+                    logger.warn("Seaux vides pas encore en main - reessai selection")
+                    BucketManager.selectEmptyBuckets()
+                    waitMs(200)
+                }
+            }
+            2 -> {
+                // Etape 3: Retourner au remplissage d'eau
+                refillingStep = 0  // Reset pour la prochaine fois
+                stateData.state = BotState.FILLING_WATER
+            }
         }
-
-        waitMs(200)
-
-        // Utiliser /eau pour remplir les seaux
-        BucketManager.fillBucketsWithCommand()
-
-        stateData.state = BotState.FILLING_WATER
-        waitMs(3000) // Attendre que /eau s'execute
     }
 
     private fun handleNextStation() {
