@@ -1,6 +1,7 @@
 package fr.nix.agribot.action
 
 import fr.nix.agribot.menu.MenuDetector
+import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.option.KeyBinding
 import net.minecraft.util.ActionResult
@@ -120,7 +121,7 @@ object ActionManager {
     fun holdRightClick() {
         client.execute {
             val options = client.options
-            KeyBinding.setKeyPressed(options.useKey.boundKey, true)
+            KeyBinding.setKeyPressed(KeyBindingHelper.getBoundKeyOf(options.useKey), true)
             useKeyHeld = true
             logger.debug("Maintien clic droit")
         }
@@ -133,7 +134,7 @@ object ActionManager {
     fun releaseRightClick() {
         client.execute {
             val options = client.options
-            KeyBinding.setKeyPressed(options.useKey.boundKey, false)
+            KeyBinding.setKeyPressed(KeyBindingHelper.getBoundKeyOf(options.useKey), false)
             useKeyHeld = false
             logger.debug("Relache clic droit")
         }
@@ -167,7 +168,7 @@ object ActionManager {
             player?.setSneaking(true)
 
             // Activer la touche sneak (utilise boundKey pour respecter la configuration utilisateur)
-            KeyBinding.setKeyPressed(options.sneakKey.boundKey, true)
+            KeyBinding.setKeyPressed(KeyBindingHelper.getBoundKeyOf(options.sneakKey), true)
             sneakKeyHeld = true
 
             logger.debug("Debut accroupissement - isSneaking: ${player?.isSneaking}, playerInput.sneak: ${player?.input?.playerInput?.sneak}")
@@ -202,7 +203,7 @@ object ActionManager {
             player?.setSneaking(false)
 
             // Desactiver la touche sneak (utilise boundKey pour respecter la configuration utilisateur)
-            KeyBinding.setKeyPressed(options.sneakKey.boundKey, false)
+            KeyBinding.setKeyPressed(KeyBindingHelper.getBoundKeyOf(options.sneakKey), false)
             sneakKeyHeld = false
 
             logger.debug("Fin accroupissement - isSneaking: ${player?.isSneaking}, playerInput.sneak: ${player?.input?.playerInput?.sneak}")
@@ -255,12 +256,13 @@ object ActionManager {
      */
     private fun pressKey(keyBinding: KeyBinding) {
         client.execute {
-            KeyBinding.setKeyPressed(keyBinding.boundKey, true)
-            KeyBinding.onKeyPressed(keyBinding.boundKey)
+            val boundKey = KeyBindingHelper.getBoundKeyOf(keyBinding)
+            KeyBinding.setKeyPressed(boundKey, true)
+            KeyBinding.onKeyPressed(boundKey)
 
             // Relacher apres un tick
             client.execute {
-                KeyBinding.setKeyPressed(keyBinding.boundKey, false)
+                KeyBinding.setKeyPressed(KeyBindingHelper.getBoundKeyOf(keyBinding), false)
             }
         }
     }
@@ -347,17 +349,17 @@ object ActionManager {
         client.execute {
             if (useKeyHeld) {
                 val options = client.options
-                KeyBinding.setKeyPressed(options.useKey.boundKey, false)
+                KeyBinding.setKeyPressed(KeyBindingHelper.getBoundKeyOf(options.useKey), false)
                 useKeyHeld = false
             }
             if (sneakKeyHeld) {
                 val options = client.options
-                KeyBinding.setKeyPressed(options.sneakKey.boundKey, false)
+                KeyBinding.setKeyPressed(KeyBindingHelper.getBoundKeyOf(options.sneakKey), false)
                 sneakKeyHeld = false
             }
             if (attackKeyHeld) {
                 val options = client.options
-                KeyBinding.setKeyPressed(options.attackKey.boundKey, false)
+                KeyBinding.setKeyPressed(KeyBindingHelper.getBoundKeyOf(options.attackKey), false)
                 attackKeyHeld = false
             }
             logger.debug("Toutes les touches relachees")
