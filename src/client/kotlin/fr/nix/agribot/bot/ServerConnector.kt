@@ -84,6 +84,12 @@ object ServerConnector {
     private var savedServerInfo: ServerInfo? = null
     private var savedServerAddress: String? = null
 
+    /** Flag pour detecter l'ouverture du menu */
+    private var menuJustOpened = false
+
+    /** Flag pour detecter la fermeture du menu apres clic hache */
+    private var menuJustClosed = false
+
     /**
      * Demarre le processus de connexion automatique.
      * @return true si le processus a demarre, false si deja en cours ou erreur
@@ -135,6 +141,8 @@ object ServerConnector {
         errorMessage = ""
         savedServerInfo = null
         savedServerAddress = null
+        menuJustOpened = false
+        menuJustClosed = false
     }
 
     /**
@@ -247,17 +255,26 @@ object ServerConnector {
         waitCounter++
 
         if (MenuDetector.isSimpleMenuOpen()) {
-            // Menu ouvert, attendre un peu pour qu'il soit charge
+            // Menu vient de s'ouvrir - reset le compteur
+            if (!menuJustOpened) {
+                menuJustOpened = true
+                waitCounter = 0
+                logger.info("Menu boussole detecte - attente stabilisation...")
+            }
+
+            // Attendre 2 secondes de stabilisation APRES ouverture du menu
             if (waitCounter >= 40) { // 2 secondes de stabilisation
-                logger.info("Menu boussole ouvert et charge")
+                logger.info("Menu boussole charge - recherche hache")
                 state = ConnectionState.CLICKING_NETHERITE_AXE
                 waitCounter = 0
+                menuJustOpened = false
             }
         } else if (waitCounter >= 100) { // Timeout 5 secondes
             logger.warn("Timeout attente menu boussole")
             // Reessayer d'ouvrir
             state = ConnectionState.OPENING_COMPASS_MENU
             waitCounter = 0
+            menuJustOpened = false
         }
     }
 
@@ -295,17 +312,27 @@ object ServerConnector {
 
         // Verifier si le menu s'est ferme (signe de teleportation vers le serveur)
         if (!MenuDetector.isMenuOpen()) {
-            // Menu ferme, attendre encore un peu
-            if (waitCounter >= 60) { // 3 secondes apres fermeture du menu
+            // Menu vient de se fermer - reset le compteur
+            if (!menuJustClosed) {
+                menuJustClosed = true
+                waitCounter = 0
+                logger.info("Menu ferme - attente chargement du monde...")
+                ChatManager.showActionBar("Chargement du monde...", "6")
+            }
+
+            // Attendre 10 secondes pour que le monde soit bien charge
+            if (waitCounter >= 200) { // 10 secondes apres fermeture du menu
                 logger.info("Connexion au serveur de jeu reussie!")
                 state = ConnectionState.CONNECTED
+                menuJustClosed = false
                 ChatManager.showActionBar("Connecte au serveur de jeu!", "a")
             }
-        } else if (waitCounter >= 200) { // Timeout 10 secondes
+        } else if (waitCounter >= 400) { // Timeout 20 secondes si menu reste ouvert
             logger.warn("Timeout connexion au serveur de jeu")
             // Fermer le menu et considerer comme connecte (le serveur peut avoir des delais)
             ActionManager.pressEscape()
             state = ConnectionState.CONNECTED
+            menuJustClosed = false
             ChatManager.showActionBar("Connexion terminee", "a")
         }
     }
