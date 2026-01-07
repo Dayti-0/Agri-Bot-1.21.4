@@ -1,5 +1,6 @@
 package fr.nix.agribot
 
+import fr.nix.agribot.bot.AutoStartManager
 import fr.nix.agribot.bot.BotCore
 import fr.nix.agribot.config.AgriConfig
 import fr.nix.agribot.config.Plants
@@ -26,6 +27,9 @@ object AgriBotClient : ClientModInitializer {
 
         // Initialiser le coeur du bot
         BotCore.init()
+
+        // Initialiser le gestionnaire de demarrage automatique
+        AutoStartManager.init()
 
         // Afficher les infos de config
         logger.info("Serveur: ${config.serverAddress}")
