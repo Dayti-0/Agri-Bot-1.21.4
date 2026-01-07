@@ -160,19 +160,45 @@ object BucketManager {
 
     /**
      * Vide un seau d'eau dans la station (clic droit).
-     * @return true si l'action a ete effectuee
+     * Verifie que le seau a bien ete consomme avant de continuer.
+     * @param maxRetries Nombre maximum de tentatives
+     * @param verifyDelayMs Delai avant verification (ms)
+     * @return true si le seau a ete consomme, false sinon
      */
-    fun pourWaterBucket(): Boolean {
+    fun pourWaterBucket(maxRetries: Int = 3, verifyDelayMs: Long = 500): Boolean {
         if (!InventoryManager.isHoldingWaterBucket()) {
             if (!selectWaterBucket()) {
                 return false
             }
         }
 
-        ActionManager.rightClick()
-        state.bucketsUsedThisStation++
-        logger.debug("Seau vide (${state.bucketsUsedThisStation} cette station)")
-        return true
+        // Sauvegarder le nombre de seaux d'eau avant le clic
+        val waterBucketsBefore = InventoryManager.countWaterBucketsInHotbar()
+
+        for (attempt in 1..maxRetries) {
+            ActionManager.rightClick()
+
+            // Attendre que le serveur traite l'action
+            Thread.sleep(verifyDelayMs)
+
+            // Verifier que le seau a ete consomme
+            val waterBucketsAfter = InventoryManager.countWaterBucketsInHotbar()
+
+            if (waterBucketsAfter < waterBucketsBefore) {
+                // Seau consomme avec succes
+                state.bucketsUsedThisStation++
+                logger.debug("Seau vide (${state.bucketsUsedThisStation} cette station)")
+                return true
+            }
+
+            if (attempt < maxRetries) {
+                logger.warn("Seau non consomme, tentative ${attempt}/${maxRetries}...")
+                Thread.sleep(200) // Petit delai avant retry
+            }
+        }
+
+        logger.error("Echec: seau non consomme apres $maxRetries tentatives")
+        return false
     }
 
     /**

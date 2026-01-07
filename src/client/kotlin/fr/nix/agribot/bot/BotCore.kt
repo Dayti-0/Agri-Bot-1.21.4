@@ -521,8 +521,14 @@ object BotCore {
         // Selectionner un seau d'eau et le vider
         if (BucketManager.selectWaterBucket()) {
             waitMs(200)
-            BucketManager.pourWaterBucket()
-            waitMs(config.delayBetweenBuckets)
+            if (!BucketManager.pourWaterBucket()) {
+                // Echec apres plusieurs tentatives - probleme de positionnement ou lag
+                logger.error("Impossible de vider le seau - passage a la station suivante")
+                stateData.state = BotState.NEXT_STATION
+                return
+            }
+            // Delai reduit car pourWaterBucket inclut deja une verification avec delai
+            waitMs(config.delayBetweenBuckets / 2)
         }
 
         // Limite de securite
