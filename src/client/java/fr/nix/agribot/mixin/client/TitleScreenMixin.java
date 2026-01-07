@@ -41,7 +41,7 @@ public abstract class TitleScreenMixin extends Screen {
 
     private void connectAndStartBot() {
         MinecraftClient client = MinecraftClient.getInstance();
-        AgriConfig config = AgriBotClient.Companion.getConfig();
+        AgriConfig config = AgriBotClient.INSTANCE.getConfig();
 
         // Verifier que le mot de passe est configure
         if (config.getLoginPassword().isEmpty()) {
