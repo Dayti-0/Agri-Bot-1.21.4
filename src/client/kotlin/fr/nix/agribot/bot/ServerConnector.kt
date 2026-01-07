@@ -7,6 +7,10 @@ import fr.nix.agribot.config.AgriConfig
 import fr.nix.agribot.inventory.InventoryManager
 import fr.nix.agribot.menu.MenuDetector
 import net.minecraft.client.MinecraftClient
+import net.minecraft.client.gui.screen.multiplayer.ConnectScreen
+import net.minecraft.client.gui.screen.TitleScreen
+import net.minecraft.client.network.ServerAddress
+import net.minecraft.client.network.ServerInfo
 import org.slf4j.LoggerFactory
 
 /**
@@ -33,8 +37,12 @@ enum class ConnectionState {
     WAITING_GAME_SERVER,
     /** Captcha detecte - deconnexion */
     CAPTCHA_DISCONNECT,
-    /** Attente avant reconnexion */
+    /** Attente avant reconnexion (5 secondes) */
     WAITING_RECONNECT,
+    /** Reconnexion au serveur en cours */
+    RECONNECTING,
+    /** Attente que la connexion soit etablie */
+    WAITING_CONNECTION_ESTABLISHED,
     /** Connexion terminee avec succes */
     CONNECTED,
     /** Erreur de connexion */
@@ -71,6 +79,10 @@ object ServerConnector {
     /** Message d'erreur */
     var errorMessage = ""
         private set
+
+    /** Informations du serveur pour la reconnexion */
+    private var savedServerInfo: ServerInfo? = null
+    private var savedServerAddress: String? = null
 
     /**
      * Demarre le processus de connexion automatique.
@@ -121,6 +133,8 @@ object ServerConnector {
         reconnectAttempts = 0
         waitCounter = 0
         errorMessage = ""
+        savedServerInfo = null
+        savedServerAddress = null
     }
 
     /**
@@ -154,6 +168,8 @@ object ServerConnector {
             ConnectionState.WAITING_GAME_SERVER -> handleWaitingGameServer()
             ConnectionState.CAPTCHA_DISCONNECT -> handleCaptchaDisconnect()
             ConnectionState.WAITING_RECONNECT -> handleWaitingReconnect()
+            ConnectionState.RECONNECTING -> handleReconnecting()
+            ConnectionState.WAITING_CONNECTION_ESTABLISHED -> handleWaitingConnectionEstablished()
             ConnectionState.CONNECTED -> { /* Rien */ }
             ConnectionState.ERROR -> { /* Rien */ }
         }
@@ -295,6 +311,12 @@ object ServerConnector {
     }
 
     private fun handleCaptchaDisconnect() {
+        // Sauvegarder les informations du serveur avant de se deconnecter
+        savedServerInfo = client.currentServerEntry
+        savedServerAddress = config.serverAddress
+
+        logger.info("Sauvegarde serveur: ${savedServerInfo?.address ?: savedServerAddress}")
+
         // Deconnecter le joueur
         logger.info("Deconnexion pour captcha...")
         client.execute {
@@ -305,10 +327,10 @@ object ServerConnector {
     }
 
     private fun handleWaitingReconnect() {
-        // Attendre 3 secondes (60 ticks) avant de se reconnecter
+        // Attendre 5 secondes (100 ticks) avant de se reconnecter
         waitCounter++
 
-        if (waitCounter >= 60) {
+        if (waitCounter >= 100) {
             reconnectAttempts++
 
             if (reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
@@ -318,15 +340,77 @@ object ServerConnector {
                 return
             }
 
-            // Se reconnecter
+            // Passer a l'etat de reconnexion
             logger.info("Reconnexion (tentative $reconnectAttempts/$MAX_RECONNECT_ATTEMPTS)...")
             ChatManager.showActionBar("Reconnexion...", "6")
-
-            // La reconnexion doit etre geree par le joueur ou via une autre methode
-            // Pour l'instant, on remet en IDLE et on attend que le joueur se reconnecte
-            // Le BotCore detectera la reconnexion et relancera le processus
-            state = ConnectionState.IDLE
+            state = ConnectionState.RECONNECTING
             waitCounter = 0
+        }
+    }
+
+    private fun handleReconnecting() {
+        // Reconnecter au serveur
+        val serverAddress = savedServerInfo?.address ?: savedServerAddress ?: config.serverAddress
+
+        logger.info("Reconnexion au serveur: $serverAddress")
+
+        client.execute {
+            try {
+                // Creer ServerInfo si on n'en a pas
+                val serverInfo = savedServerInfo ?: ServerInfo(
+                    "SurvivalWorld",
+                    serverAddress,
+                    ServerInfo.ServerType.OTHER
+                )
+
+                // Parser l'adresse du serveur
+                val address = ServerAddress.parse(serverAddress)
+
+                // Se connecter via ConnectScreen
+                ConnectScreen.connect(
+                    client.currentScreen ?: TitleScreen(),
+                    client,
+                    address,
+                    serverInfo,
+                    false,
+                    null
+                )
+
+                logger.info("Connexion initiee vers $serverAddress")
+            } catch (e: Exception) {
+                logger.error("Erreur lors de la reconnexion: ${e.message}")
+                errorMessage = "Erreur de reconnexion: ${e.message}"
+                state = ConnectionState.ERROR
+            }
+        }
+
+        state = ConnectionState.WAITING_CONNECTION_ESTABLISHED
+        waitCounter = 0
+    }
+
+    private fun handleWaitingConnectionEstablished() {
+        // Attendre que la connexion soit etablie
+        waitCounter++
+
+        // Verifier si on est connecte (player existe)
+        if (ChatManager.isConnected()) {
+            logger.info("Connexion etablie - reprise du processus de login")
+            // Attendre un peu avant de renvoyer /login
+            if (waitCounter >= 40) { // 2 secondes de stabilisation
+                state = ConnectionState.SENDING_LOGIN
+                waitCounter = 0
+            }
+        } else if (waitCounter >= 400) { // Timeout 20 secondes
+            logger.warn("Timeout attente connexion")
+            // Reessayer la reconnexion
+            if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                state = ConnectionState.RECONNECTING
+                waitCounter = 0
+            } else {
+                errorMessage = "Echec de reconnexion apres plusieurs tentatives"
+                state = ConnectionState.ERROR
+                ChatManager.showActionBar(errorMessage, "c")
+            }
         }
     }
 }
