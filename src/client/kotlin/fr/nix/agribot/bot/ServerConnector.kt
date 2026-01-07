@@ -440,4 +440,66 @@ object ServerConnector {
             }
         }
     }
+
+    /**
+     * Deconnecte le joueur et prepare la reconnexion ulterieure.
+     * Sauvegarde les informations du serveur pour pouvoir se reconnecter.
+     */
+    fun disconnectAndPrepareReconnect() {
+        // Sauvegarder les informations du serveur avant de se deconnecter
+        savedServerInfo = client.currentServerEntry
+        savedServerAddress = config.serverAddress
+
+        logger.info("Sauvegarde serveur pour reconnexion: ${savedServerInfo?.address ?: savedServerAddress}")
+
+        // Deconnecter le joueur
+        logger.info("Deconnexion du serveur...")
+        client.execute {
+            client.world?.disconnect()
+        }
+
+        // Reset l'etat pour la prochaine reconnexion
+        state = ConnectionState.IDLE
+        reconnectAttempts = 0
+        waitCounter = 0
+    }
+
+    /**
+     * Demarre une reconnexion au serveur apres une deconnexion.
+     * Utilise les informations du serveur sauvegardees precedemment.
+     * @return true si la reconnexion a demarre, false si erreur
+     */
+    fun startReconnection(): Boolean {
+        if (state != ConnectionState.IDLE && state != ConnectionState.ERROR) {
+            logger.warn("Reconnexion deja en cours (etat: $state)")
+            return false
+        }
+
+        // Verifier que le mot de passe est configure
+        if (config.loginPassword.isBlank()) {
+            errorMessage = "Mot de passe non configure!"
+            ChatManager.showActionBar(errorMessage, "c")
+            state = ConnectionState.ERROR
+            return false
+        }
+
+        // Verifier qu'on a une adresse de serveur
+        val serverAddress = savedServerInfo?.address ?: savedServerAddress ?: config.serverAddress
+        if (serverAddress.isBlank()) {
+            errorMessage = "Adresse serveur non configuree!"
+            ChatManager.showActionBar(errorMessage, "c")
+            state = ConnectionState.ERROR
+            return false
+        }
+
+        logger.info("========================================")
+        logger.info("Demarrage reconnexion au serveur: $serverAddress")
+        logger.info("========================================")
+
+        reconnectAttempts = 1
+        state = ConnectionState.RECONNECTING
+        waitCounter = 0
+
+        return true
+    }
 }

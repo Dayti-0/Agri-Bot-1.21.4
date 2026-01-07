@@ -616,6 +616,10 @@ object BotCore {
         val nextSessionType = if (stateData.waterRefillsRemaining > 0) "remplissage eau" else "recolte/plantation"
 
         logger.info("Pause de ${pauseSeconds / 60} minutes avant prochaine session ($nextSessionType)")
+        logger.info("Deconnexion du serveur...")
+
+        // Deconnecter du serveur et preparer la reconnexion
+        ServerConnector.disconnectAndPrepareReconnect()
 
         // Passer en pause
         stateData.state = BotState.PAUSED
@@ -623,9 +627,17 @@ object BotCore {
     }
 
     private fun handlePaused() {
-        // Fin de pause, relancer une session
-        logger.info("Fin de pause, nouvelle session")
-        startSession()
+        // Fin de pause, reconnecter au serveur puis relancer une session
+        logger.info("Fin de pause, reconnexion au serveur...")
+
+        // Lancer la reconnexion au serveur
+        if (ServerConnector.startReconnection()) {
+            stateData.state = BotState.CONNECTING
+        } else {
+            logger.error("Echec du demarrage de la reconnexion: ${ServerConnector.errorMessage}")
+            stateData.errorMessage = ServerConnector.errorMessage
+            stateData.state = BotState.ERROR
+        }
     }
 
     private fun handleError() {
