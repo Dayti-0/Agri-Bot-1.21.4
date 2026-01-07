@@ -522,7 +522,8 @@ object BotCore {
         if (BucketManager.selectWaterBucket()) {
             waitMs(200)
             BucketManager.pourWaterBucket()
-            waitMs(config.delayBetweenBuckets)
+            // Utiliser le delai adaptatif pour le prochain seau
+            waitMs(BucketManager.getAdaptiveDelay())
         }
 
         // Limite de securite

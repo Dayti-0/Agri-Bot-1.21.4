@@ -28,7 +28,9 @@ data class BucketState(
     var waterBucketsCount: Int = 0,
     var emptyBucketsCount: Int = 0,
     var currentSlotIndex: Int = -1,
-    var bucketsUsedThisStation: Int = 0
+    var bucketsUsedThisStation: Int = 0,
+    /** Delai adaptatif entre les seaux (s'ajuste selon le temps de consommation reel) */
+    var adaptiveDelayMs: Long = 500
 )
 
 /**
@@ -158,9 +160,16 @@ object BucketManager {
         ChatManager.fillBuckets()
     }
 
+    // Constantes pour le delai adaptatif
+    private const val MIN_DELAY_MS = 500L      // Delai minimum entre seaux
+    private const val MAX_DELAY_MS = 10000L    // Delai maximum (10 secondes)
+    private const val CHECK_INTERVAL_MS = 100L // Intervalle de verification
+
     /**
      * Vide un seau d'eau dans la station (clic droit).
-     * @return true si l'action a ete effectuee
+     * Attend que le seau soit consomme avec un delai adaptatif.
+     * Le delai s'ajuste automatiquement selon le temps de reponse du serveur.
+     * @return true si le seau a ete consomme, false si pas de seau disponible
      */
     fun pourWaterBucket(): Boolean {
         if (!InventoryManager.isHoldingWaterBucket()) {
@@ -169,10 +178,57 @@ object BucketManager {
             }
         }
 
+        // Sauvegarder le nombre de seaux d'eau avant le clic
+        val waterBucketsBefore = InventoryManager.countWaterBucketsInHotbar()
+        val startTime = System.currentTimeMillis()
+
+        // Faire le clic droit
         ActionManager.rightClick()
+
+        // Attendre que le seau soit consomme (verification periodique)
+        var elapsed = 0L
+        while (elapsed < MAX_DELAY_MS) {
+            Thread.sleep(CHECK_INTERVAL_MS)
+            elapsed = System.currentTimeMillis() - startTime
+
+            val waterBucketsAfter = InventoryManager.countWaterBucketsInHotbar()
+
+            if (waterBucketsAfter < waterBucketsBefore) {
+                // Seau consomme avec succes
+                state.bucketsUsedThisStation++
+
+                // Ajuster le delai adaptatif (avec une marge de securite de 20%)
+                val newDelay = (elapsed * 1.2).toLong().coerceIn(MIN_DELAY_MS, MAX_DELAY_MS)
+                if (newDelay != state.adaptiveDelayMs) {
+                    logger.info("Delai adaptatif ajuste: ${state.adaptiveDelayMs}ms -> ${newDelay}ms")
+                    state.adaptiveDelayMs = newDelay
+                }
+
+                logger.debug("Seau vide en ${elapsed}ms (${state.bucketsUsedThisStation} cette station)")
+                return true
+            }
+        }
+
+        // Timeout atteint - le seau n'a pas ete consomme apres 10 secondes
+        // On augmente le delai au maximum et on continue quand meme
+        logger.warn("Seau non consomme apres ${MAX_DELAY_MS}ms - augmentation du delai")
+        state.adaptiveDelayMs = MAX_DELAY_MS
         state.bucketsUsedThisStation++
-        logger.debug("Seau vide (${state.bucketsUsedThisStation} cette station)")
         return true
+    }
+
+    /**
+     * Obtient le delai adaptatif actuel entre les seaux.
+     */
+    fun getAdaptiveDelay(): Long {
+        return state.adaptiveDelayMs
+    }
+
+    /**
+     * Reinitialise le delai adaptatif a sa valeur par defaut.
+     */
+    fun resetAdaptiveDelay() {
+        state.adaptiveDelayMs = 500
     }
 
     /**
