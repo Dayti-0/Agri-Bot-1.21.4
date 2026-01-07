@@ -320,8 +320,8 @@ object ServerConnector {
                 ChatManager.showActionBar("Chargement du monde...", "6")
             }
 
-            // Attendre 10 secondes pour que le monde soit bien charge
-            if (waitCounter >= 200) { // 10 secondes apres fermeture du menu
+            // Attendre 7 secondes pour que le monde soit bien charge
+            if (waitCounter >= 140) { // 7 secondes apres fermeture du menu
                 logger.info("Connexion au serveur de jeu reussie!")
                 state = ConnectionState.CONNECTED
                 menuJustClosed = false
