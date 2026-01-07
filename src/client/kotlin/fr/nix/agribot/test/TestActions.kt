@@ -246,8 +246,8 @@ object TestActions {
                 // Etape 4: Verifier s'il y a un melon a recolter
                 val melonSlot = InventoryManager.findMelonSlotInMenu()
                 if (melonSlot >= 0) {
-                    logger.info("Melon detecte - recolte...")
-                    ActionManager.leftClick()
+                    logger.info("Melon detecte au slot $melonSlot - recolte...")
+                    ActionManager.leftClickSlot(melonSlot)
                     Thread.sleep(500)
 
                     // Verifier que le melon a disparu
