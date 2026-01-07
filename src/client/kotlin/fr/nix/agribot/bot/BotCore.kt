@@ -402,9 +402,9 @@ object BotCore {
                 // Etape 1: Verifier d'abord s'il y a un melon a recolter
                 val melonSlot = InventoryManager.findMelonSlotInMenu()
                 if (melonSlot >= 0) {
-                    // Melon present, on clique pour recolter
-                    logger.info("Melon detecte - clic gauche pour recolter")
-                    ActionManager.leftClick()
+                    // Melon present, on clique sur le slot pour recolter
+                    logger.info("Melon detecte au slot $melonSlot - clic gauche pour recolter")
+                    ActionManager.leftClickSlot(melonSlot)
                     harvestingStep = 1
                     harvestingRetries = 0
                     waitMs(300)
@@ -436,8 +436,8 @@ object BotCore {
                         logger.warn("Echec recolte apres $MAX_HARVESTING_RETRIES tentatives, on continue")
                         harvestingStep = 2
                     } else {
-                        logger.info("Melon encore present, retry ${harvestingRetries}/$MAX_HARVESTING_RETRIES")
-                        ActionManager.leftClick()
+                        logger.info("Melon encore present au slot $melonSlot, retry ${harvestingRetries}/$MAX_HARVESTING_RETRIES")
+                        ActionManager.leftClickSlot(melonSlot)
                         waitMs(300)
                     }
                 }
