@@ -10,6 +10,8 @@ import fr.nix.agribot.inventory.InventoryManager
 import fr.nix.agribot.menu.MenuDetector
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
 import net.minecraft.client.MinecraftClient
+import net.minecraft.client.gui.screen.DisconnectedScreen
+import net.minecraft.client.gui.screen.TitleScreen
 import org.slf4j.LoggerFactory
 
 /**
@@ -65,11 +67,38 @@ object BotCore {
      */
     fun init() {
         ClientTickEvents.END_CLIENT_TICK.register { _ ->
+            // Verifier si on est sur l'ecran de deconnexion et le fermer automatiquement
+            handleDisconnectedScreen()
+
             if (config.botEnabled) {
                 onTick()
             }
         }
         logger.info("BotCore initialise")
+    }
+
+    /**
+     * Gere l'ecran de deconnexion automatiquement.
+     * Quand le bot est actif et en pause ou deconnexion, ferme l'ecran et revient au menu.
+     */
+    private fun handleDisconnectedScreen() {
+        val currentScreen = client.currentScreen
+
+        // Verifier si on est sur l'ecran de deconnexion
+        if (currentScreen is DisconnectedScreen) {
+            // Verifier si le bot est actif
+            if (config.botEnabled) {
+                val currentState = stateData.state
+
+                // Si le bot est en PAUSED ou DISCONNECTING, fermer l'ecran
+                if (currentState == BotState.PAUSED || currentState == BotState.DISCONNECTING) {
+                    logger.info("Ecran de deconnexion detecte - retour au menu principal (etat: $currentState)")
+                    client.execute {
+                        client.setScreen(TitleScreen())
+                    }
+                }
+            }
+        }
     }
 
     /**
