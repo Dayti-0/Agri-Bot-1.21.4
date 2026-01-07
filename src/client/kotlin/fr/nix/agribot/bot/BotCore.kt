@@ -82,8 +82,16 @@ object BotCore {
             return
         }
 
+        // Determiner si c'est une session de remplissage intermediaire ou une session normale
+        val isWaterOnly = stateData.waterRefillsRemaining > 0
+
         logger.info("========================================")
-        logger.info("Demarrage session de farming")
+        if (isWaterOnly) {
+            logger.info("Session de REMPLISSAGE D'EAU uniquement")
+            logger.info("Remplissages restants: ${stateData.waterRefillsRemaining}")
+        } else {
+            logger.info("Demarrage session de farming")
+        }
         logger.info("Stations: ${stations.size}")
         logger.info("Plante: ${config.selectedPlant}")
         logger.info("========================================")
@@ -91,16 +99,42 @@ object BotCore {
         // Log l'etat des seaux (refreshState appele dans logState)
         BucketManager.logState()
 
+        // Determiner si on doit remplir l'eau cette session
+        val needsWater = if (isWaterOnly) {
+            true // Session de remplissage -> toujours remplir
+        } else {
+            // Session normale (recolte/plantation) -> verifier si replantage necessite de l'eau
+            config.shouldRefillWaterOnReplant()
+        }
+
+        // Calculer le nombre de remplissages necessaires pour un nouveau cycle
+        val refillsNeeded = if (isWaterOnly) {
+            stateData.waterRefillsRemaining - 1 // Decrementer car on va faire ce remplissage
+        } else {
+            config.calculateWaterRefillsNeeded()
+        }
+
+        // Timestamp du debut du cycle (garder l'ancien si session intermediaire)
+        val cycleStart = if (isWaterOnly) {
+            stateData.cycleStartTime
+        } else {
+            System.currentTimeMillis() / 1000
+        }
+
         stateData.apply {
             state = BotState.MANAGING_BUCKETS
             currentStationIndex = 0
             totalStations = stations.size
             sessionStartTime = System.currentTimeMillis()
             stationsCompleted = 0
-            needsWaterRefill = config.shouldRefillWater()
+            needsWaterRefill = needsWater
+            this.isWaterOnlySession = isWaterOnly
+            waterRefillsRemaining = refillsNeeded
+            cycleStartTime = cycleStart
         }
 
-        ChatManager.showActionBar("Session demarree - ${stations.size} stations", "a")
+        val sessionType = if (isWaterOnly) "Remplissage eau" else "Session farming"
+        ChatManager.showActionBar("$sessionType - ${stations.size} stations", "a")
         ChatListener.resetAllDetections()
 
         // Verifier si on doit gerer les seaux (transition matin/apres-midi)
@@ -268,8 +302,9 @@ object BotCore {
         }
 
         val stationName = stations[stateData.currentStationIndex]
-        logger.info("Station ${stateData.currentStationIndex + 1}/${stations.size}: $stationName")
-        ChatManager.showActionBar("Station ${stateData.currentStationIndex + 1}/${stations.size}: $stationName", "6")
+        val actionType = if (stateData.isWaterOnlySession) "Remplissage" else "Station"
+        logger.info("$actionType ${stateData.currentStationIndex + 1}/${stations.size}: $stationName")
+        ChatManager.showActionBar("$actionType ${stateData.currentStationIndex + 1}/${stations.size}: $stationName", "6")
 
         // Teleportation
         ChatManager.teleportToHome(stationName)
@@ -280,7 +315,16 @@ object BotCore {
     }
 
     private fun handleWaitingTeleport() {
-        // Attente terminee, ouvrir la station
+        // Session de remplissage d'eau uniquement -> passer directement au remplissage
+        if (stateData.isWaterOnlySession) {
+            logger.info("Session remplissage eau - passage direct au remplissage")
+            BucketManager.prepareForStation()
+            stateData.state = BotState.FILLING_WATER
+            waitMs(100)
+            return
+        }
+
+        // Session normale: ouvrir la station pour recolte/plantation
         // Selectionner le slot des graines d'abord (cherche automatiquement dans la hotbar)
         InventoryManager.selectSeedsSlotAuto()
 
@@ -464,16 +508,25 @@ object BotCore {
         stateData.stationsCompleted++
         stateData.currentStationIndex++
 
-        logger.info("Station terminee (${stateData.stationsCompleted}/${stateData.totalStations})")
+        val stationType = if (stateData.isWaterOnlySession) "Remplissage" else "Station"
+        logger.info("$stationType terminee (${stateData.stationsCompleted}/${stateData.totalStations})")
 
         if (stateData.currentStationIndex >= stateData.totalStations) {
             // Toutes les stations terminees
             if (stateData.needsWaterRefill) {
                 config.lastWaterRefillTime = System.currentTimeMillis() / 1000
                 config.save()
+                logger.info("Timestamp remplissage eau sauvegarde")
             }
-            // Vider les seaux restants avant de terminer
-            stateData.state = BotState.EMPTYING_REMAINING_BUCKETS
+            // Vider les seaux restants avant de terminer (sauf si c'est une session de remplissage uniquement)
+            if (stateData.isWaterOnlySession) {
+                // Session de remplissage terminee, pas besoin de vider les seaux
+                logger.info("Session remplissage terminee - ${stateData.waterRefillsRemaining} remplissages restants")
+                stateData.state = BotState.DISCONNECTING
+            } else {
+                // Session farming terminee, vider les seaux
+                stateData.state = BotState.EMPTYING_REMAINING_BUCKETS
+            }
         } else {
             stateData.state = BotState.TELEPORTING
             waitMs(800)
@@ -500,19 +553,25 @@ object BotCore {
 
     private fun handleDisconnecting() {
         val duration = (System.currentTimeMillis() - stateData.sessionStartTime) / 1000 / 60
+        val sessionType = if (stateData.isWaterOnlySession) "remplissage eau" else "farming"
+
         logger.info("========================================")
-        logger.info("Session terminee - Duree: ${duration}min")
+        logger.info("Session $sessionType terminee - Duree: ${duration}min")
         logger.info("Stations completees: ${stateData.stationsCompleted}/${stateData.totalStations}")
+        logger.info("Remplissages restants avant recolte: ${stateData.waterRefillsRemaining}")
         logger.info("========================================")
 
         ChatManager.showActionBar("Session terminee! ${stateData.stationsCompleted} stations", "a")
 
+        // Calculer la pause en fonction des remplissages restants
+        val pauseSeconds = config.getNextPauseSeconds(stateData.waterRefillsRemaining, stateData.cycleStartTime)
+        val nextSessionType = if (stateData.waterRefillsRemaining > 0) "remplissage eau" else "recolte/plantation"
+
+        logger.info("Pause de ${pauseSeconds / 60} minutes avant prochaine session ($nextSessionType)")
+
         // Passer en pause
         stateData.state = BotState.PAUSED
-        val pauseSeconds = config.getSessionPauseSeconds()
         waitMs(pauseSeconds * 1000)
-
-        logger.info("Pause de ${pauseSeconds / 60} minutes avant prochaine session")
     }
 
     private fun handlePaused() {
