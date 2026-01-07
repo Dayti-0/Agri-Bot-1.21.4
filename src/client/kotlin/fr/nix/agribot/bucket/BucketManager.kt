@@ -5,6 +5,8 @@ import fr.nix.agribot.action.ActionManager
 import fr.nix.agribot.chat.ChatListener
 import fr.nix.agribot.chat.ChatManager
 import fr.nix.agribot.inventory.InventoryManager
+import net.minecraft.client.MinecraftClient
+import net.minecraft.util.Hand
 import org.slf4j.LoggerFactory
 
 /**
@@ -30,7 +32,9 @@ data class BucketState(
     var currentSlotIndex: Int = -1,
     var bucketsUsedThisStation: Int = 0,
     /** Delai adaptatif entre les seaux (s'ajuste selon le temps de consommation reel) */
-    var adaptiveDelayMs: Long = 500
+    var adaptiveDelayMs: Long = 500,
+    /** Indique si le premier seau de la session a ete utilise (pour ignorer le lag initial) */
+    var firstBucketUsedThisSession: Boolean = false
 )
 
 /**
@@ -169,6 +173,7 @@ object BucketManager {
      * Vide un seau d'eau dans la station (clic droit).
      * Attend que le seau soit consomme avec un delai adaptatif.
      * Le delai s'ajuste automatiquement selon le temps de reponse du serveur.
+     * Note: Le premier seau de la session est ignore pour le calcul du delai (lag initial).
      * @return true si le seau a ete consomme, false si pas de seau disponible
      */
     fun pourWaterBucket(): Boolean {
@@ -185,6 +190,11 @@ object BucketManager {
         // Faire le clic droit
         ActionManager.rightClick()
 
+        // Ajouter l'animation du bras pour que ca paraisse reel
+        MinecraftClient.getInstance().execute {
+            MinecraftClient.getInstance().player?.swingHand(Hand.MAIN_HAND)
+        }
+
         // Attendre que le seau soit consomme (verification periodique)
         var elapsed = 0L
         while (elapsed < MAX_DELAY_MS) {
@@ -197,11 +207,18 @@ object BucketManager {
                 // Seau consomme avec succes
                 state.bucketsUsedThisStation++
 
-                // Ajuster le delai adaptatif (avec une marge de securite de 20%)
-                val newDelay = (elapsed * 1.2).toLong().coerceIn(MIN_DELAY_MS, MAX_DELAY_MS)
-                if (newDelay != state.adaptiveDelayMs) {
-                    logger.info("Delai adaptatif ajuste: ${state.adaptiveDelayMs}ms -> ${newDelay}ms")
-                    state.adaptiveDelayMs = newDelay
+                // Ignorer le premier seau de la session pour le calcul du delai adaptatif
+                // (le premier seau a souvent un lag initial qui fausserait le calcul)
+                if (!state.firstBucketUsedThisSession) {
+                    state.firstBucketUsedThisSession = true
+                    logger.info("Premier seau de la session - delai ignore pour calibration (${elapsed}ms)")
+                } else {
+                    // Ajuster le delai adaptatif (avec une marge de securite de 20%)
+                    val newDelay = (elapsed * 1.2).toLong().coerceIn(MIN_DELAY_MS, MAX_DELAY_MS)
+                    if (newDelay != state.adaptiveDelayMs) {
+                        logger.info("Delai adaptatif ajuste: ${state.adaptiveDelayMs}ms -> ${newDelay}ms")
+                        state.adaptiveDelayMs = newDelay
+                    }
                 }
 
                 logger.debug("Seau vide en ${elapsed}ms (${state.bucketsUsedThisStation} cette station)")
@@ -226,9 +243,11 @@ object BucketManager {
 
     /**
      * Reinitialise le delai adaptatif a sa valeur par defaut.
+     * Reinitialise egalement le flag du premier seau pour la prochaine session.
      */
     fun resetAdaptiveDelay() {
         state.adaptiveDelayMs = 500
+        state.firstBucketUsedThisSession = false
     }
 
     /**
