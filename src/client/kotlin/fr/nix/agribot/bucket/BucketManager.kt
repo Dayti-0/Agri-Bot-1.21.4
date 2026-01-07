@@ -161,7 +161,7 @@ object BucketManager {
     }
 
     // Constantes pour le delai adaptatif
-    private const val MIN_DELAY_MS = 300L      // Delai minimum entre seaux
+    private const val MIN_DELAY_MS = 500L      // Delai minimum entre seaux
     private const val MAX_DELAY_MS = 10000L    // Delai maximum (10 secondes)
     private const val CHECK_INTERVAL_MS = 100L // Intervalle de verification
 
