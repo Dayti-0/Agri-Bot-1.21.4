@@ -120,7 +120,7 @@ object ActionManager {
     fun holdRightClick() {
         client.execute {
             val options = client.options
-            KeyBinding.setKeyPressed(options.useKey.defaultKey, true)
+            KeyBinding.setKeyPressed(options.useKey.boundKey, true)
             useKeyHeld = true
             logger.debug("Maintien clic droit")
         }
@@ -133,7 +133,7 @@ object ActionManager {
     fun releaseRightClick() {
         client.execute {
             val options = client.options
-            KeyBinding.setKeyPressed(options.useKey.defaultKey, false)
+            KeyBinding.setKeyPressed(options.useKey.boundKey, false)
             useKeyHeld = false
             logger.debug("Relache clic droit")
         }
@@ -166,8 +166,8 @@ object ActionManager {
             // Forcer l'etat de sneak directement sur le joueur
             player?.setSneaking(true)
 
-            // Activer la touche sneak
-            KeyBinding.setKeyPressed(options.sneakKey.defaultKey, true)
+            // Activer la touche sneak (utilise boundKey pour respecter la configuration utilisateur)
+            KeyBinding.setKeyPressed(options.sneakKey.boundKey, true)
             sneakKeyHeld = true
 
             logger.debug("Debut accroupissement - isSneaking: ${player?.isSneaking}, playerInput.sneak: ${player?.input?.playerInput?.sneak}")
@@ -201,8 +201,8 @@ object ActionManager {
             // Desactiver l'etat de sneak directement sur le joueur
             player?.setSneaking(false)
 
-            // Desactiver la touche sneak
-            KeyBinding.setKeyPressed(options.sneakKey.defaultKey, false)
+            // Desactiver la touche sneak (utilise boundKey pour respecter la configuration utilisateur)
+            KeyBinding.setKeyPressed(options.sneakKey.boundKey, false)
             sneakKeyHeld = false
 
             logger.debug("Fin accroupissement - isSneaking: ${player?.isSneaking}, playerInput.sneak: ${player?.input?.playerInput?.sneak}")
@@ -255,12 +255,12 @@ object ActionManager {
      */
     private fun pressKey(keyBinding: KeyBinding) {
         client.execute {
-            KeyBinding.setKeyPressed(keyBinding.defaultKey, true)
-            KeyBinding.onKeyPressed(keyBinding.defaultKey)
+            KeyBinding.setKeyPressed(keyBinding.boundKey, true)
+            KeyBinding.onKeyPressed(keyBinding.boundKey)
 
             // Relacher apres un tick
             client.execute {
-                KeyBinding.setKeyPressed(keyBinding.defaultKey, false)
+                KeyBinding.setKeyPressed(keyBinding.boundKey, false)
             }
         }
     }
@@ -347,17 +347,17 @@ object ActionManager {
         client.execute {
             if (useKeyHeld) {
                 val options = client.options
-                KeyBinding.setKeyPressed(options.useKey.defaultKey, false)
+                KeyBinding.setKeyPressed(options.useKey.boundKey, false)
                 useKeyHeld = false
             }
             if (sneakKeyHeld) {
                 val options = client.options
-                KeyBinding.setKeyPressed(options.sneakKey.defaultKey, false)
+                KeyBinding.setKeyPressed(options.sneakKey.boundKey, false)
                 sneakKeyHeld = false
             }
             if (attackKeyHeld) {
                 val options = client.options
-                KeyBinding.setKeyPressed(options.attackKey.defaultKey, false)
+                KeyBinding.setKeyPressed(options.attackKey.boundKey, false)
                 attackKeyHeld = false
             }
             logger.debug("Toutes les touches relachees")
