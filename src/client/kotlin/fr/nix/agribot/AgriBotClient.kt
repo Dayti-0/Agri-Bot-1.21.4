@@ -72,50 +72,66 @@ object AgriBotClient : ClientModInitializer {
      * Affiche le timer de session sur l'ecran multijoueur.
      */
     private fun renderSessionTimer(context: net.minecraft.client.gui.DrawContext) {
-        // Verifier si le bot est active
-        if (!config.botEnabled) {
-            return
-        }
-
-        val currentState = BotCore.stateData.state
         val client = MinecraftClient.getInstance()
 
         var timeText: String? = null
         var textColor = 0x55FF55 // Vert par defaut
 
-        when (currentState) {
-            BotState.PAUSED -> {
-                val pauseEndTime = BotCore.stateData.pauseEndTime
-                val currentTime = System.currentTimeMillis()
-                val remainingMs = pauseEndTime - currentTime
+        // Si le bot n'est pas active, verifier la configuration et afficher l'etat
+        if (!config.botEnabled) {
+            // Verifier les erreurs de configuration
+            val hasPassword = config.loginPassword.isNotBlank()
+            val stationCount = config.getActiveStationCount()
+            val hasStations = stationCount > 0
 
-                if (remainingMs > 0) {
-                    // Formater le temps restant
-                    val totalSeconds = remainingMs / 1000
-                    val hours = totalSeconds / 3600
-                    val minutes = (totalSeconds % 3600) / 60
-                    val seconds = totalSeconds % 60
+            if (!hasPassword) {
+                timeText = "AgriBot: Mot de passe manquant"
+                textColor = 0xFF5555 // Rouge
+            } else if (!hasStations) {
+                timeText = "AgriBot: 0 stations"
+                textColor = 0xFF5555 // Rouge
+            } else {
+                // Tout est configure, pret a demarrer
+                timeText = "AgriBot: Pret $stationCount Stations"
+                textColor = 0x55FF55 // Vert clair
+            }
+        } else {
+            val currentState = BotCore.stateData.state
 
-                    timeText = if (hours > 0) {
-                        String.format("Prochaine session: %dh %02dm %02ds", hours, minutes, seconds)
-                    } else if (minutes > 0) {
-                        String.format("Prochaine session: %dm %02ds", minutes, seconds)
+            when (currentState) {
+                BotState.PAUSED -> {
+                    val pauseEndTime = BotCore.stateData.pauseEndTime
+                    val currentTime = System.currentTimeMillis()
+                    val remainingMs = pauseEndTime - currentTime
+
+                    if (remainingMs > 0) {
+                        // Formater le temps restant
+                        val totalSeconds = remainingMs / 1000
+                        val hours = totalSeconds / 3600
+                        val minutes = (totalSeconds % 3600) / 60
+                        val seconds = totalSeconds % 60
+
+                        timeText = if (hours > 0) {
+                            String.format("Prochaine session: %dh %02dm %02ds", hours, minutes, seconds)
+                        } else if (minutes > 0) {
+                            String.format("Prochaine session: %dm %02ds", minutes, seconds)
+                        } else {
+                            String.format("Prochaine session: %ds", seconds)
+                        }
                     } else {
-                        String.format("Prochaine session: %ds", seconds)
+                        // Temps ecoule, attente de reconnexion
+                        timeText = "Reconnexion en cours..."
+                        textColor = 0xFFFF55 // Jaune
                     }
-                } else {
-                    // Temps ecoule, attente de reconnexion
-                    timeText = "Reconnexion en cours..."
-                    textColor = 0xFFFF55 // Jaune
                 }
-            }
-            BotState.IDLE -> {
-                // Bot en attente - afficher un message d'indication
-                timeText = "AgriBot: Pret"
-                textColor = 0xAAAAAA // Gris
-            }
-            else -> {
-                // Autres etats - ne rien afficher
+                BotState.IDLE -> {
+                    // Bot en attente - afficher un message d'indication
+                    timeText = "AgriBot: Pret"
+                    textColor = 0xAAAAAA // Gris
+                }
+                else -> {
+                    // Autres etats - ne rien afficher
+                }
             }
         }
 
