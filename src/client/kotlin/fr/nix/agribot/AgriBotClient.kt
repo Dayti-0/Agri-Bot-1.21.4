@@ -92,7 +92,7 @@ object AgriBotClient : ClientModInitializer {
                 textColor = 0xFF5555 // Rouge
             } else {
                 // Tout est configure, pret a demarrer
-                timeText = "AgriBot: Pret"
+                timeText = "AgriBot: Pret $stationCount Stations"
                 textColor = 0x55FF55 // Vert clair
             }
         } else {
