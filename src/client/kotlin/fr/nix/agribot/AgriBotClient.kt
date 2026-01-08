@@ -77,10 +77,24 @@ object AgriBotClient : ClientModInitializer {
         var timeText: String? = null
         var textColor = 0x55FF55 // Vert par defaut
 
-        // Si le bot n'est pas active, afficher un message d'indication
+        // Si le bot n'est pas active, verifier la configuration et afficher l'etat
         if (!config.botEnabled) {
-            timeText = "AgriBot: Desactive (F6)"
-            textColor = 0x666666 // Gris fonce
+            // Verifier les erreurs de configuration
+            val hasPassword = config.loginPassword.isNotBlank()
+            val stationCount = config.getActiveStationCount()
+            val hasStations = stationCount > 0
+
+            if (!hasPassword) {
+                timeText = "AgriBot: Mot de passe manquant"
+                textColor = 0xFF5555 // Rouge
+            } else if (!hasStations) {
+                timeText = "AgriBot: 0 stations"
+                textColor = 0xFF5555 // Rouge
+            } else {
+                // Tout est configure, pret a demarrer
+                timeText = "AgriBot: Pret (F6)"
+                textColor = 0x55FF55 // Vert clair
+            }
         } else {
             val currentState = BotCore.stateData.state
 
