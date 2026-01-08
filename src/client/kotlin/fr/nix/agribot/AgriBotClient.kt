@@ -92,7 +92,7 @@ object AgriBotClient : ClientModInitializer {
                 textColor = 0xFF5555 // Rouge
             } else {
                 // Tout est configure, pret a demarrer
-                timeText = "AgriBot: Pret (F6)"
+                timeText = "AgriBot: Pret"
                 textColor = 0x55FF55 // Vert clair
             }
         } else {
