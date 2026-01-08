@@ -15,6 +15,18 @@ object ChatListener {
     const val STATION_EMPTY_MESSAGE = "Votre Station de Croissance est vide"
     const val TELEPORT_MESSAGE = "Téléporté"
 
+    // Messages indiquant un event actif (teleportation forcee)
+    // Ces messages signifient qu'un event est en cours et le bot doit se deconnecter
+    private val FORCED_TELEPORT_KEYWORDS = listOf(
+        "teleportation",
+        "vers le dernier emplacement",
+        "teleporte en",
+        "teleporte a",
+        "teleporte vers",
+        "vous avez ete teleporte",
+        "a ete teleporte"
+    )
+
     // Callbacks enregistres
     private val callbacks = CopyOnWriteArrayList<(String) -> Unit>()
 
@@ -25,6 +37,10 @@ object ChatListener {
 
     @Volatile
     var teleportDetected = false
+        private set
+
+    @Volatile
+    var forcedTeleportDetected = false
         private set
 
     @Volatile
@@ -49,6 +65,14 @@ object ChatListener {
             logger.debug("Detection: Teleportation effectuee")
         }
 
+        // Detection teleportation forcee (event actif)
+        // Normaliser le message en minuscules et sans accents pour comparaison
+        val normalizedMessage = normalizeForComparison(message)
+        if (FORCED_TELEPORT_KEYWORDS.any { keyword -> normalizedMessage.contains(keyword) }) {
+            forcedTeleportDetected = true
+            logger.warn("Detection: Teleportation forcee (event actif)! Message: $message")
+        }
+
         // Appeler les callbacks
         callbacks.forEach { callback ->
             try {
@@ -57,6 +81,25 @@ object ChatListener {
                 logger.error("Erreur dans callback chat: ${e.message}")
             }
         }
+    }
+
+    /**
+     * Normalise un texte pour la comparaison (minuscules, sans accents).
+     */
+    private fun normalizeForComparison(text: String): String {
+        return text.lowercase()
+            .replace("é", "e")
+            .replace("è", "e")
+            .replace("ê", "e")
+            .replace("ë", "e")
+            .replace("à", "a")
+            .replace("â", "a")
+            .replace("ô", "o")
+            .replace("ù", "u")
+            .replace("û", "u")
+            .replace("î", "i")
+            .replace("ï", "i")
+            .replace("ç", "c")
     }
 
     /**
@@ -88,11 +131,19 @@ object ChatListener {
     }
 
     /**
+     * Reinitialise la detection de teleportation forcee (event).
+     */
+    fun resetForcedTeleportDetection() {
+        forcedTeleportDetected = false
+    }
+
+    /**
      * Reinitialise toutes les detections.
      */
     fun resetAllDetections() {
         stationFullDetected = false
         teleportDetected = false
+        forcedTeleportDetected = false
     }
 
     /**

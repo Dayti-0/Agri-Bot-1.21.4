@@ -161,9 +161,12 @@ object BotCore {
 
         // Determiner si c'est une session de remplissage intermediaire ou une session normale
         val isWaterOnly = stateData.waterRefillsRemaining > 0
+        val isResumeAfterEvent = stateData.forceFullWaterRefill
 
         logger.info("========================================")
-        if (isWaterOnly) {
+        if (isResumeAfterEvent) {
+            logger.info("REPRISE APRES EVENT - Remplissage complet")
+        } else if (isWaterOnly) {
             logger.info("Session de REMPLISSAGE D'EAU uniquement")
             logger.info("Remplissages restants: ${stateData.waterRefillsRemaining}")
         } else {
@@ -181,7 +184,9 @@ object BotCore {
         BucketManager.logState()
 
         // Determiner si on doit remplir l'eau cette session
-        val needsWater = if (isWaterOnly) {
+        val needsWater = if (isResumeAfterEvent) {
+            true // Reprise apres event -> toujours remplir completement
+        } else if (isWaterOnly) {
             true // Session de remplissage -> toujours remplir
         } else {
             // Session normale (recolte/plantation) -> verifier si replantage necessite de l'eau
@@ -189,17 +194,27 @@ object BotCore {
         }
 
         // Calculer le nombre de remplissages necessaires pour un nouveau cycle
-        val refillsNeeded = if (isWaterOnly) {
+        val refillsNeeded = if (isResumeAfterEvent) {
+            config.calculateWaterRefillsNeeded() // Nouveau cycle apres event
+        } else if (isWaterOnly) {
             stateData.waterRefillsRemaining - 1 // Decrementer car on va faire ce remplissage
         } else {
             config.calculateWaterRefillsNeeded()
         }
 
-        // Timestamp du debut du cycle (garder l'ancien si session intermediaire)
-        val cycleStart = if (isWaterOnly) {
+        // Timestamp du debut du cycle (garder l'ancien si session intermediaire, reset si reprise apres event)
+        val cycleStart = if (isResumeAfterEvent) {
+            System.currentTimeMillis() / 1000 // Nouveau cycle apres event
+        } else if (isWaterOnly) {
             stateData.cycleStartTime
         } else {
             System.currentTimeMillis() / 1000
+        }
+
+        // Reinitialiser le flag de reprise apres event
+        if (isResumeAfterEvent) {
+            stateData.forceFullWaterRefill = false
+            logger.info("Reprise apres event: nouveau cycle de croissance demarre")
         }
 
         stateData.apply {
@@ -246,6 +261,17 @@ object BotCore {
     private fun onTick() {
         tickCounter++
 
+        // Verifier si une teleportation forcee a ete detectee (event actif)
+        // Sauf si on est deja en pause ou en deconnexion ou idle
+        if (ChatListener.forcedTeleportDetected &&
+            stateData.state != BotState.IDLE &&
+            stateData.state != BotState.PAUSED &&
+            stateData.state != BotState.DISCONNECTING &&
+            stateData.state != BotState.CONNECTING) {
+            handleForcedTeleportDetected()
+            return
+        }
+
         // Attendre si necessaire
         if (waitTicks > 0) {
             waitTicks--
@@ -289,6 +315,64 @@ object BotCore {
     }
 
     // ==================== HANDLERS ====================
+
+    /**
+     * Gere la detection d'une teleportation forcee (event actif).
+     * Le bot se deconnecte et attend 2 heures avant de se reconnecter.
+     * Si l'eau n'est pas suffisante pour attendre 2h, le bot ne se reconnectera pas.
+     */
+    private fun handleForcedTeleportDetected() {
+        logger.warn("========================================")
+        logger.warn("TELEPORTATION FORCEE DETECTEE - EVENT ACTIF!")
+        logger.warn("Le bot va se deconnecter et attendre 2 heures")
+        logger.warn("========================================")
+
+        // Reinitialiser le flag de detection
+        ChatListener.resetForcedTeleportDetection()
+
+        // Fermer tout menu ouvert
+        ActionManager.closeScreen()
+        ActionManager.releaseAllKeys()
+
+        // Verifier si l'eau est suffisante pour la pause de 2h
+        val hasEnoughWater = config.hasEnoughWaterForEventPause()
+
+        // Afficher le message a l'utilisateur
+        if (hasEnoughWater) {
+            ChatManager.showActionBar("Event detecte! Pause 2h puis reprise", "e")
+        } else {
+            ChatManager.showActionBar("Event detecte! Pause 2h - PAS DE RECONNEXION (eau insuffisante)", "c")
+        }
+
+        // Deconnecter du serveur et preparer la reconnexion
+        ServerConnector.disconnectAndPrepareReconnect()
+
+        // Configurer la pause event
+        stateData.apply {
+            isEventPause = true
+            canReconnectAfterEvent = hasEnoughWater
+            pauseEndTime = config.getEventPauseEndTime()
+
+            // Reinitialiser pour reprendre a la premiere station comme une nouvelle session
+            currentStationIndex = 0
+            isFirstStationOfSession = true
+
+            // Toujours remplir completement les stations apres un event
+            // (meme si l'eau etait insuffisante, on rempli quand meme a la reconnexion)
+            waterRefillsRemaining = 0
+            isWaterOnlySession = false
+            forceFullWaterRefill = true  // Forcer le remplissage complet apres la reconnexion
+        }
+
+        logger.info("Pause event configuree:")
+        logger.info("  - Fin de pause: ${java.time.Instant.ofEpochMilli(stateData.pauseEndTime)}")
+        logger.info("  - Eau suffisante pour 2h: ${if (hasEnoughWater) "OUI" else "NON (reconnexion quand meme)"}")
+        logger.info("  - Station de reprise: premiere station")
+
+        // Passer en pause
+        stateData.state = BotState.PAUSED
+        waitMs(AgriConfig.EVENT_PAUSE_SECONDS * 1000)
+    }
 
     private fun handleConnecting() {
         // Deleguer au ServerConnector
@@ -929,8 +1013,32 @@ object BotCore {
     }
 
     private fun handlePaused() {
-        // Fin de pause, reconnecter au serveur puis relancer une session
-        logger.info("Fin de pause, reconnexion au serveur...")
+        // Fin de pause, verifier si c'est une pause event
+        if (stateData.isEventPause) {
+            // Pause due a un event (teleportation forcee)
+            if (!stateData.canReconnectAfterEvent) {
+                // Eau insuffisante - on se reconnecte quand meme mais on avertit
+                logger.warn("========================================")
+                logger.warn("FIN DE PAUSE EVENT - RECONNEXION")
+                logger.warn("ATTENTION: L'eau etait insuffisante pour les 2h de pause")
+                logger.warn("Les plantes ont peut-etre souffert - remplissage complet")
+                logger.warn("========================================")
+
+                ChatManager.showActionBar("Fin pause event - Reconnexion (eau etait insuffisante)", "e")
+            } else {
+                // Eau suffisante - se reconnecter normalement
+                logger.info("========================================")
+                logger.info("FIN DE PAUSE EVENT - RECONNEXION")
+                logger.info("Reprise a la premiere station avec remplissage complet")
+                logger.info("========================================")
+
+                ChatManager.showActionBar("Fin pause event - Reconnexion...", "a")
+            }
+            stateData.isEventPause = false
+        } else {
+            // Pause normale
+            logger.info("Fin de pause, reconnexion au serveur...")
+        }
 
         // Lancer la reconnexion au serveur
         if (ServerConnector.startReconnection()) {

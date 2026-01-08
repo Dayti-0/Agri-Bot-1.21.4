@@ -84,7 +84,15 @@ data class BotStateData(
     var isFirstStationOfSession: Boolean = true,
 
     /** Timestamp de fin de la pause (pour affichage du temps restant) */
-    var pauseEndTime: Long = 0
+    var pauseEndTime: Long = 0,
+
+    // Gestion des events (teleportation forcee)
+    /** True si la pause actuelle est due a un event (teleportation forcee) */
+    var isEventPause: Boolean = false,
+    /** True si l'eau est suffisante pour se reconnecter apres la pause event */
+    var canReconnectAfterEvent: Boolean = true,
+    /** True si la prochaine session doit forcer le remplissage complet (apres event) */
+    var forceFullWaterRefill: Boolean = false
 ) {
     fun reset() {
         state = BotState.IDLE
@@ -94,5 +102,8 @@ data class BotStateData(
         errorMessage = ""
         isWaterOnlySession = false
         waterRefillsRemaining = 0
+        isEventPause = false
+        canReconnectAfterEvent = true
+        forceFullWaterRefill = false
     }
 }
