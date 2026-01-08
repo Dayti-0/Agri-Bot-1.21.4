@@ -57,6 +57,10 @@ data class AgriConfig(
         private val gson: Gson = GsonBuilder().setPrettyPrinting().create()
         private var instance: AgriConfig? = null
 
+        // Duree de pause en cas d'event (2 heures)
+        const val EVENT_PAUSE_SECONDS = 2 * 60 * 60 // 2 heures = 7200 secondes
+        const val EVENT_PAUSE_MINUTES = 120 // 2 heures en minutes
+
         // Durees d'eau disponibles (en minutes)
         val WATER_DURATIONS = listOf(
             300,  // 5h
@@ -369,5 +373,42 @@ data class AgriConfig(
             logger.info("Prochaine pause: remplissage eau dans ${waterIntervalSeconds / 60}min ($waterRefillsRemaining restants)")
             return waterIntervalSeconds
         }
+    }
+
+    // ==================== GESTION DES EVENTS (TELEPORTATION FORCEE) ====================
+
+    /**
+     * Verifie si l'eau dans les stations sera suffisante apres une pause de 2 heures.
+     * L'eau doit pouvoir tenir pendant la pause de 2h + le temps necessaire pour remplir
+     * toutes les stations apres la reconnexion.
+     *
+     * @return True si l'eau est suffisante pour attendre 2h, false sinon
+     */
+    fun hasEnoughWaterForEventPause(): Boolean {
+        val remainingWater = getRemainingWaterMinutes()
+
+        // On a besoin que l'eau tienne au moins pendant les 2h de pause
+        // avec une marge de securite de 10 minutes pour le temps de reconnexion et remplissage
+        val minimumWaterNeeded = EVENT_PAUSE_MINUTES + 10
+
+        val hasEnough = remainingWater >= minimumWaterNeeded
+
+        if (hasEnough) {
+            logger.info("Eau suffisante pour pause event: ${remainingWater}min restantes (besoin: ${minimumWaterNeeded}min)")
+        } else {
+            logger.warn("Eau INSUFFISANTE pour pause event: ${remainingWater}min restantes (besoin: ${minimumWaterNeeded}min)")
+            logger.warn("Le bot ne se reconnectera PAS apres la pause event car les plantes vont mourir")
+        }
+
+        return hasEnough
+    }
+
+    /**
+     * Retourne le timestamp de fin de pause pour un event (2h a partir de maintenant).
+     *
+     * @return Timestamp en millisecondes de la fin de pause
+     */
+    fun getEventPauseEndTime(): Long {
+        return System.currentTimeMillis() + (EVENT_PAUSE_SECONDS * 1000L)
     }
 }
