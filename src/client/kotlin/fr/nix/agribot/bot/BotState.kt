@@ -1,5 +1,7 @@
 package fr.nix.agribot.bot
 
+import net.minecraft.util.math.Vec3d
+
 /**
  * Etats possibles du bot.
  */
@@ -72,7 +74,11 @@ data class BotStateData(
     /** Nombre de sessions de remplissage encore necessaires avant la prochaine recolte */
     var waterRefillsRemaining: Int = 0,
     /** Timestamp de debut du cycle de croissance actuel (premiere plantation) */
-    var cycleStartTime: Long = 0
+    var cycleStartTime: Long = 0,
+
+    // Gestion de la distance de teleportation
+    /** Position du joueur avant la teleportation */
+    var positionBeforeTeleport: Vec3d? = null
 ) {
     fun reset() {
         state = BotState.IDLE

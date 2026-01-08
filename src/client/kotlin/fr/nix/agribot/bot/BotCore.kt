@@ -318,6 +318,10 @@ object BotCore {
             0 -> {
                 // Etape 1: Se teleporter au coffre
                 logger.info("Gestion seaux - TP vers coffre: ${config.homeCoffre}")
+
+                // Sauvegarder la position avant teleportation
+                stateData.positionBeforeTeleport = client.player?.pos
+
                 ChatManager.teleportToHome(config.homeCoffre)
                 bucketManagementStep = 1
                 menuOpenStep = 0
@@ -325,9 +329,49 @@ object BotCore {
                 waitMs(config.delayAfterTeleport)
             }
             1 -> {
-                // Etape 2: Ouvrir le coffre (non-bloquant)
+                // Etape 2: Calculer distance et ouvrir le coffre (non-bloquant)
                 when (menuOpenStep) {
                     0 -> {
+                        // Calculer la distance de teleportation pour ajuster le delai
+                        val positionBefore = stateData.positionBeforeTeleport
+                        val positionAfter = client.player?.pos
+                        var extraDelay = 0
+
+                        if (positionBefore != null && positionAfter != null) {
+                            val distance = positionBefore.distanceTo(positionAfter)
+                            logger.debug("Distance de teleportation vers coffre: %.2f blocs".format(distance))
+
+                            // Si la distance est superieure a 50 blocs, ajouter un delai supplementaire
+                            if (distance > 50.0) {
+                                extraDelay = 1500  // 1.5 secondes de plus
+                                logger.info("Teleportation longue distance vers coffre (%.2f blocs) - delai supplementaire de ${extraDelay}ms".format(distance))
+                                // Appliquer le delai supplementaire
+                                if (extraDelay > 0) {
+                                    waitMs(extraDelay)
+                                    // Passer a l'etape suivante apres le delai
+                                    menuOpenStep = -1
+                                    return
+                                }
+                            }
+                        }
+
+                        // Verifier d'abord si un coffre est deja ouvert
+                        if (MenuDetector.isChestOrContainerOpen()) {
+                            logger.info("Coffre deja ouvert - Pret pour operations")
+                            MenuDetector.debugCurrentMenu()
+                            bucketManagementStep = 2
+                            menuOpenStep = 0
+                            return
+                        }
+
+                        logger.info("Gestion seaux - Ouverture coffre")
+                        ActionManager.rightClick()
+                        menuOpenStep = 1
+                        menuOpenRetries = 0
+                        wait(2)  // Attendre 2 ticks avant de verifier
+                    }
+                    -1 -> {
+                        // Etape intermediaire apres le delai supplementaire
                         // Verifier d'abord si un coffre est deja ouvert
                         if (MenuDetector.isChestOrContainerOpen()) {
                             logger.info("Coffre deja ouvert - Pret pour operations")
@@ -440,6 +484,9 @@ object BotCore {
         logger.info("$actionType ${stateData.currentStationIndex + 1}/${stations.size}: $stationName")
         ChatManager.showActionBar("$actionType ${stateData.currentStationIndex + 1}/${stations.size}: $stationName", "6")
 
+        // Sauvegarder la position avant teleportation pour calculer la distance ensuite
+        stateData.positionBeforeTeleport = client.player?.pos
+
         // Teleportation
         ChatManager.teleportToHome(stationName)
         ChatListener.resetTeleportDetection()
@@ -449,12 +496,29 @@ object BotCore {
     }
 
     private fun handleWaitingTeleport() {
+        // Calculer la distance de teleportation pour ajuster le delai
+        val positionBefore = stateData.positionBeforeTeleport
+        val positionAfter = client.player?.pos
+        var extraDelay = 0
+
+        if (positionBefore != null && positionAfter != null) {
+            val distance = positionBefore.distanceTo(positionAfter)
+            logger.debug("Distance de teleportation: %.2f blocs".format(distance))
+
+            // Si la distance est superieure a 50 blocs, ajouter un delai supplementaire
+            // pour laisser le temps au monde de se charger
+            if (distance > 50.0) {
+                extraDelay = 1500  // 1.5 secondes de plus
+                logger.info("Teleportation longue distance (%.2f blocs) - delai supplementaire de ${extraDelay}ms".format(distance))
+            }
+        }
+
         // Session de remplissage d'eau uniquement -> passer directement au remplissage
         if (stateData.isWaterOnlySession) {
             logger.info("Session remplissage eau - passage direct au remplissage")
             BucketManager.prepareForStation()
             stateData.state = BotState.FILLING_WATER
-            waitMs(100)
+            waitMs(100 + extraDelay)
             return
         }
 
@@ -463,7 +527,7 @@ object BotCore {
         InventoryManager.selectSeedsSlotAuto()
 
         stateData.state = BotState.OPENING_STATION
-        waitMs(100)
+        waitMs(100 + extraDelay)
     }
 
     private fun handleOpeningStation() {
