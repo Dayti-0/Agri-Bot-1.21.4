@@ -211,6 +211,7 @@ object BotCore {
             this.isWaterOnlySession = isWaterOnly
             waterRefillsRemaining = refillsNeeded
             cycleStartTime = cycleStart
+            isFirstStationOfSession = true  // Reinitialiser pour chaque nouvelle session
         }
 
         val sessionType = if (isWaterOnly) "Remplissage eau" else "Session farming"
@@ -501,7 +502,11 @@ object BotCore {
         val positionAfter = client.player?.pos
         var extraDelay = 0
 
-        if (positionBefore != null && positionAfter != null) {
+        // Delai supplementaire pour la premiere station de la session
+        if (stateData.isFirstStationOfSession) {
+            extraDelay = 3000  // 3 secondes pour la premiere station
+            logger.info("Premiere station de la session - delai supplementaire de ${extraDelay}ms pour chargement initial")
+        } else if (positionBefore != null && positionAfter != null) {
             val distance = positionBefore.distanceTo(positionAfter)
             logger.debug("Distance de teleportation: %.2f blocs".format(distance))
 
@@ -553,9 +558,21 @@ object BotCore {
             1 -> {
                 // Attendre que le menu soit ouvert
                 if (MenuDetector.isSimpleMenuOpen()) {
-                    logger.debug("Station detectee - attente stabilisation")
+                    // Delai de stabilisation plus long pour la premiere station de la session
+                    val stabilizationTicks = if (stateData.isFirstStationOfSession) {
+                        MENU_STABILIZATION_TICKS + 40  // 4 secondes au lieu de 2 pour la premiere station
+                    } else {
+                        MENU_STABILIZATION_TICKS  // 2 secondes normalement
+                    }
+
+                    if (stateData.isFirstStationOfSession) {
+                        logger.info("Premiere station - attente stabilisation prolongee (${stabilizationTicks / 20}s)")
+                    } else {
+                        logger.debug("Station detectee - attente stabilisation")
+                    }
+
                     menuOpenStep = 2
-                    wait(MENU_STABILIZATION_TICKS)  // Stabilisation
+                    wait(stabilizationTicks)  // Stabilisation
                 } else {
                     menuOpenRetries++
                     if (menuOpenRetries >= MAX_MENU_OPEN_RETRIES) {
@@ -830,6 +847,12 @@ object BotCore {
     private fun handleNextStation() {
         stateData.stationsCompleted++
         stateData.currentStationIndex++
+
+        // Apres la premiere station, desactiver le delai supplementaire de debut de session
+        if (stateData.isFirstStationOfSession && stateData.stationsCompleted >= 1) {
+            stateData.isFirstStationOfSession = false
+            logger.debug("Premiere station completee - delais normaux pour les suivantes")
+        }
 
         val stationType = if (stateData.isWaterOnlySession) "Remplissage" else "Station"
         logger.info("$stationType terminee (${stateData.stationsCompleted}/${stateData.totalStations})")

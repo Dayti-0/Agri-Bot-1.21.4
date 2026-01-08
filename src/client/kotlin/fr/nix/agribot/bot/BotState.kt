@@ -78,7 +78,10 @@ data class BotStateData(
 
     // Gestion de la distance de teleportation
     /** Position du joueur avant la teleportation */
-    var positionBeforeTeleport: Vec3d? = null
+    var positionBeforeTeleport: Vec3d? = null,
+
+    /** Indique si c'est la premiere station de la session (necessite plus de temps de chargement) */
+    var isFirstStationOfSession: Boolean = true
 ) {
     fun reset() {
         state = BotState.IDLE
