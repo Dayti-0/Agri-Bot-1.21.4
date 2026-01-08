@@ -2,11 +2,8 @@ package fr.nix.agribot.mixin.client;
 
 import fr.nix.agribot.AgriBotClient;
 import fr.nix.agribot.bot.AutoStartManager;
-import fr.nix.agribot.bot.BotCore;
-import fr.nix.agribot.bot.BotState;
 import fr.nix.agribot.config.AgriConfig;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.multiplayer.ConnectScreen;
 import net.minecraft.client.gui.screen.multiplayer.MultiplayerScreen;
@@ -27,45 +24,6 @@ public abstract class MultiplayerScreenMixin extends Screen {
 
     protected MultiplayerScreenMixin(Text title) {
         super(title);
-    }
-
-    @Inject(method = "render", at = @At("TAIL"))
-    private void renderSessionTimer(DrawContext context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
-        // Afficher le temps restant avant la prochaine session si le bot est en pause
-        BotState currentState = BotCore.INSTANCE.getStateData().getState();
-
-        if (currentState == BotState.PAUSED) {
-            long pauseEndTime = BotCore.INSTANCE.getStateData().getPauseEndTime();
-            long currentTime = System.currentTimeMillis();
-            long remainingMs = pauseEndTime - currentTime;
-
-            if (remainingMs > 0) {
-                // Formater le temps restant
-                long totalSeconds = remainingMs / 1000;
-                long hours = totalSeconds / 3600;
-                long minutes = (totalSeconds % 3600) / 60;
-                long seconds = totalSeconds % 60;
-
-                String timeText;
-                if (hours > 0) {
-                    timeText = String.format("Prochaine session: %dh %02dm %02ds", hours, minutes, seconds);
-                } else if (minutes > 0) {
-                    timeText = String.format("Prochaine session: %dm %02ds", minutes, seconds);
-                } else {
-                    timeText = String.format("Prochaine session: %ds", seconds);
-                }
-
-                // Dessiner le texte en haut a gauche avec un fond semi-transparent
-                MinecraftClient client = MinecraftClient.getInstance();
-                int textWidth = client.textRenderer.getWidth(timeText);
-
-                // Fond semi-transparent
-                context.fill(8, 8, 16 + textWidth, 22, 0x80000000);
-
-                // Texte en vert
-                context.drawText(client.textRenderer, timeText, 12, 12, 0x55FF55, true);
-            }
-        }
     }
 
     @Inject(method = "init", at = @At("TAIL"))
