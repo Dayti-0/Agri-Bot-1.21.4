@@ -21,10 +21,19 @@ object ChatListener {
         "teleportation",
         "vers le dernier emplacement",
         "teleporte en",
-        "teleporte a",
+        "teleporte a ",  // Espace important pour eviter match avec "teleporte au"
         "teleporte vers",
         "vous avez ete teleporte",
         "a ete teleporte"
+    )
+
+    // Patterns indiquant une teleportation initiee par le bot (a ignorer)
+    // Ces messages ne doivent PAS declencher la detection de teleportation forcee
+    private val BOT_INITIATED_TELEPORT_PATTERNS = listOf(
+        "teleporte au home",
+        "teleporte a home",
+        "au home:",
+        "a home:"
     )
 
     // Callbacks enregistres
@@ -68,9 +77,17 @@ object ChatListener {
         // Detection teleportation forcee (event actif)
         // Normaliser le message en minuscules et sans accents pour comparaison
         val normalizedMessage = normalizeForComparison(message)
-        if (FORCED_TELEPORT_KEYWORDS.any { keyword -> normalizedMessage.contains(keyword) }) {
+
+        // Verifier d'abord si c'est une teleportation initiee par le bot (home, etc.)
+        val isBotInitiatedTeleport = BOT_INITIATED_TELEPORT_PATTERNS.any { pattern ->
+            normalizedMessage.contains(pattern)
+        }
+
+        if (!isBotInitiatedTeleport && FORCED_TELEPORT_KEYWORDS.any { keyword -> normalizedMessage.contains(keyword) }) {
             forcedTeleportDetected = true
             logger.warn("Detection: Teleportation forcee (event actif)! Message: $message")
+        } else if (isBotInitiatedTeleport) {
+            logger.debug("Teleportation initiee par le bot ignoree: $message")
         }
 
         // Appeler les callbacks
