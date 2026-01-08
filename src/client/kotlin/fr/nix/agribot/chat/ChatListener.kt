@@ -21,11 +21,15 @@ object ChatListener {
         "teleportation",
         "vers le dernier emplacement",
         "teleporte en",
-        "teleporte a",
+        "teleporte a ",  // Espace important pour eviter match avec "teleporte au"
         "teleporte vers",
         "vous avez ete teleporte",
         "a ete teleporte"
     )
+
+    // Pattern indiquant une teleportation initiee par le bot (a ignorer)
+    // Format: "Téléporté au home: nomDuHome"
+    private const val HOME_TELEPORT_PATTERN = "teleporte au home:"
 
     // Callbacks enregistres
     private val callbacks = CopyOnWriteArrayList<(String) -> Unit>()
@@ -68,9 +72,15 @@ object ChatListener {
         // Detection teleportation forcee (event actif)
         // Normaliser le message en minuscules et sans accents pour comparaison
         val normalizedMessage = normalizeForComparison(message)
-        if (FORCED_TELEPORT_KEYWORDS.any { keyword -> normalizedMessage.contains(keyword) }) {
+
+        // Verifier d'abord si c'est une teleportation vers un home (initiee par le bot)
+        val isHomeTeleport = normalizedMessage.contains(HOME_TELEPORT_PATTERN)
+
+        if (!isHomeTeleport && FORCED_TELEPORT_KEYWORDS.any { keyword -> normalizedMessage.contains(keyword) }) {
             forcedTeleportDetected = true
             logger.warn("Detection: Teleportation forcee (event actif)! Message: $message")
+        } else if (isHomeTeleport) {
+            logger.debug("Teleportation home ignoree: $message")
         }
 
         // Appeler les callbacks
