@@ -357,18 +357,16 @@ object BotCore {
             currentStationIndex = 0
             isFirstStationOfSession = true
 
-            // Si on peut se reconnecter, on va remplir completement les stations
-            // Donc on reset les compteurs de remplissage intermediaire
-            if (hasEnoughWater) {
-                waterRefillsRemaining = 0
-                isWaterOnlySession = false
-                forceFullWaterRefill = true  // Forcer le remplissage complet apres la reconnexion
-            }
+            // Toujours remplir completement les stations apres un event
+            // (meme si l'eau etait insuffisante, on rempli quand meme a la reconnexion)
+            waterRefillsRemaining = 0
+            isWaterOnlySession = false
+            forceFullWaterRefill = true  // Forcer le remplissage complet apres la reconnexion
         }
 
         logger.info("Pause event configuree:")
         logger.info("  - Fin de pause: ${java.time.Instant.ofEpochMilli(stateData.pauseEndTime)}")
-        logger.info("  - Reconnexion prevue: ${hasEnoughWater}")
+        logger.info("  - Eau suffisante pour 2h: ${if (hasEnoughWater) "OUI" else "NON (reconnexion quand meme)"}")
         logger.info("  - Station de reprise: premiere station")
 
         // Passer en pause
@@ -1019,26 +1017,23 @@ object BotCore {
         if (stateData.isEventPause) {
             // Pause due a un event (teleportation forcee)
             if (!stateData.canReconnectAfterEvent) {
-                // Eau insuffisante - ne pas se reconnecter
+                // Eau insuffisante - on se reconnecte quand meme mais on avertit
                 logger.warn("========================================")
-                logger.warn("FIN DE PAUSE EVENT - PAS DE RECONNEXION")
-                logger.warn("L'eau n'etait pas suffisante pour les 2h de pause")
-                logger.warn("Les plantes sont peut-etre mortes")
+                logger.warn("FIN DE PAUSE EVENT - RECONNEXION")
+                logger.warn("ATTENTION: L'eau etait insuffisante pour les 2h de pause")
+                logger.warn("Les plantes ont peut-etre souffert - remplissage complet")
                 logger.warn("========================================")
 
-                ChatManager.showActionBar("Pause event terminee - Arret (eau insuffisante)", "c")
-                stateData.isEventPause = false
-                stop()
-                return
+                ChatManager.showActionBar("Fin pause event - Reconnexion (eau etait insuffisante)", "e")
+            } else {
+                // Eau suffisante - se reconnecter normalement
+                logger.info("========================================")
+                logger.info("FIN DE PAUSE EVENT - RECONNEXION")
+                logger.info("Reprise a la premiere station avec remplissage complet")
+                logger.info("========================================")
+
+                ChatManager.showActionBar("Fin pause event - Reconnexion...", "a")
             }
-
-            // Eau suffisante - se reconnecter et reprendre comme une premiere session
-            logger.info("========================================")
-            logger.info("FIN DE PAUSE EVENT - RECONNEXION")
-            logger.info("Reprise a la premiere station avec remplissage complet")
-            logger.info("========================================")
-
-            ChatManager.showActionBar("Fin pause event - Reconnexion...", "a")
             stateData.isEventPause = false
         } else {
             // Pause normale
