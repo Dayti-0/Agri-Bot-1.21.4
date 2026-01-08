@@ -1,6 +1,8 @@
 package fr.nix.agribot.inventory
 
+import fr.nix.agribot.config.AgriConfig
 import net.minecraft.client.MinecraftClient
+import net.minecraft.item.Item
 import net.minecraft.item.Items
 import net.minecraft.screen.GenericContainerScreenHandler
 import org.slf4j.LoggerFactory
@@ -33,6 +35,24 @@ object InventoryManager {
 
     private val client: MinecraftClient
         get() = MinecraftClient.getInstance()
+
+    /**
+     * Mapping des types de graines vers les items Minecraft.
+     */
+    private val seedTypeToItem: Map<String, Item> = mapOf(
+        "wheat_seeds" to Items.WHEAT_SEEDS,
+        "pumpkin_seeds" to Items.PUMPKIN_SEEDS,
+        "melon_seeds" to Items.MELON_SEEDS,
+        "beetroot_seeds" to Items.BEETROOT_SEEDS,
+        "blue_dye" to Items.BLUE_DYE,
+        "green_dye" to Items.GREEN_DYE,
+        "sunflower" to Items.SUNFLOWER,
+        "lily_of_the_valley" to Items.LILY_OF_THE_VALLEY,
+        "blaze_powder" to Items.BLAZE_POWDER,
+        "wither_rose" to Items.WITHER_ROSE,
+        "snowball" to Items.SNOWBALL,
+        "chorus_fruit" to Items.CHORUS_FRUIT
+    )
 
     /**
      * Selectionne un slot de la hotbar (0-8).
@@ -219,37 +239,55 @@ object InventoryManager {
     }
 
     /**
-     * Trouve le premier slot contenant des graines (ou tout item qui n'est pas un seau).
+     * Trouve le premier slot contenant le type de graine specifie.
+     * @param seedType Type de graine a chercher (ex: "wheat_seeds")
      * @return Index du slot (0-8), ou -1 si aucun slot trouve
      */
-    fun findSeedsSlot(): Int {
+    fun findSeedsSlot(seedType: String): Int {
         val player = client.player ?: return -1
+        val targetItem = seedTypeToItem[seedType]
+
+        if (targetItem == null) {
+            logger.warn("Type de graine inconnu: $seedType")
+            return -1
+        }
 
         for (i in 0..8) {
             val stack = player.inventory.getStack(i)
-            // Chercher un slot non vide qui ne contient pas de seaux
-            if (!stack.isEmpty && stack.item != Items.WATER_BUCKET && stack.item != Items.BUCKET) {
-                logger.debug("Graines trouvees dans le slot ${i + 1}")
+            if (!stack.isEmpty && stack.item == targetItem) {
+                logger.debug("Graines ($seedType) trouvees dans le slot ${i + 1}")
                 return i
             }
         }
 
-        logger.warn("Aucun slot avec graines trouve dans la hotbar")
+        logger.warn("Aucun slot avec graines ($seedType) trouve dans la hotbar")
         return -1
     }
 
     /**
-     * Selectionne le slot contenant les graines.
+     * Selectionne le slot contenant les graines pour la plante selectionnee.
+     * Utilise le type de graine configure dans PlantData.
      * @return true si un slot a ete trouve et selectionne, false sinon
      */
     fun selectSeedsSlotAuto(): Boolean {
-        val slotIndex = findSeedsSlot()
+        val config = AgriConfig.get()
+        val plantData = config.getSelectedPlantData()
+
+        if (plantData == null) {
+            logger.warn("Aucune plante selectionnee ou plante inconnue: ${config.selectedPlant}")
+            return false
+        }
+
+        val seedType = plantData.seedType
+        val slotIndex = findSeedsSlot(seedType)
+
         if (slotIndex >= 0) {
             selectSlot(slotIndex)
-            logger.info("Slot graines selectionne: ${slotIndex + 1}")
+            logger.info("Slot graines ($seedType) selectionne: ${slotIndex + 1} pour ${config.selectedPlant}")
             return true
         }
-        logger.warn("Impossible de trouver les graines dans la hotbar")
+
+        logger.warn("Impossible de trouver les graines ($seedType) pour ${config.selectedPlant} dans la hotbar")
         return false
     }
 
