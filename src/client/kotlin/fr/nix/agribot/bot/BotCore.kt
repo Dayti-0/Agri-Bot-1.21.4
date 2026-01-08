@@ -343,7 +343,7 @@ object BotCore {
 
                             // Si la distance est superieure a 50 blocs, ajouter un delai supplementaire
                             if (distance > 50.0) {
-                                extraDelay = 1500  // 1.5 secondes de plus
+                                extraDelay = 2000  // 2 secondes de plus
                                 logger.info("Teleportation longue distance vers coffre (%.2f blocs) - delai supplementaire de ${extraDelay}ms".format(distance))
                                 // Appliquer le delai supplementaire
                                 if (extraDelay > 0) {
@@ -508,7 +508,7 @@ object BotCore {
             // Si la distance est superieure a 50 blocs, ajouter un delai supplementaire
             // pour laisser le temps au monde de se charger
             if (distance > 50.0) {
-                extraDelay = 1500  // 1.5 secondes de plus
+                extraDelay = 2000  // 2 secondes de plus
                 logger.info("Teleportation longue distance (%.2f blocs) - delai supplementaire de ${extraDelay}ms".format(distance))
             }
         }
