@@ -2,11 +2,8 @@ package fr.nix.agribot.mixin.client;
 
 import fr.nix.agribot.AgriBotClient;
 import fr.nix.agribot.bot.AutoStartManager;
-import fr.nix.agribot.bot.BotCore;
-import fr.nix.agribot.bot.BotState;
 import fr.nix.agribot.config.AgriConfig;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.multiplayer.ConnectScreen;
 import net.minecraft.client.gui.screen.multiplayer.MultiplayerScreen;
@@ -27,63 +24,6 @@ public abstract class MultiplayerScreenMixin extends Screen {
 
     protected MultiplayerScreenMixin(Text title) {
         super(title);
-    }
-
-    @Inject(method = "render", at = @At("TAIL"))
-    private void renderSessionTimer(DrawContext context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
-        // Verifier si le bot est active
-        AgriConfig config = AgriBotClient.INSTANCE.getConfig();
-        if (!config.getBotEnabled()) {
-            return;
-        }
-
-        // Afficher le temps restant avant la prochaine session si le bot est en pause
-        BotState currentState = BotCore.INSTANCE.getStateData().getState();
-        MinecraftClient client = MinecraftClient.getInstance();
-
-        String timeText = null;
-        int textColor = 0x55FF55; // Vert par defaut
-
-        if (currentState == BotState.PAUSED) {
-            long pauseEndTime = BotCore.INSTANCE.getStateData().getPauseEndTime();
-            long currentTime = System.currentTimeMillis();
-            long remainingMs = pauseEndTime - currentTime;
-
-            if (remainingMs > 0) {
-                // Formater le temps restant
-                long totalSeconds = remainingMs / 1000;
-                long hours = totalSeconds / 3600;
-                long minutes = (totalSeconds % 3600) / 60;
-                long seconds = totalSeconds % 60;
-
-                if (hours > 0) {
-                    timeText = String.format("Prochaine session: %dh %02dm %02ds", hours, minutes, seconds);
-                } else if (minutes > 0) {
-                    timeText = String.format("Prochaine session: %dm %02ds", minutes, seconds);
-                } else {
-                    timeText = String.format("Prochaine session: %ds", seconds);
-                }
-            } else {
-                // Temps ecoule, attente de reconnexion
-                timeText = "Reconnexion en cours...";
-                textColor = 0xFFFF55; // Jaune
-            }
-        } else if (currentState == BotState.IDLE) {
-            // Bot en attente - afficher un message d'indication
-            timeText = "AgriBot: Pret";
-            textColor = 0xAAAAAA; // Gris
-        }
-
-        // Dessiner le texte si necessaire
-        if (timeText != null) {
-            int textWidth = client.textRenderer.getWidth(timeText);
-
-            // Fond semi-transparent
-            context.fill(8, 8, 16 + textWidth, 22, 0x80000000);
-
-            // Texte
-            context.drawText(client.textRenderer, timeText, 12, 12, textColor, true);
-        }
     }
 
     @Inject(method = "init", at = @At("TAIL"))
