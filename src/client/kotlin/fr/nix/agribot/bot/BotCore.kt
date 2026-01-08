@@ -12,6 +12,7 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.screen.DisconnectedScreen
 import net.minecraft.client.gui.screen.TitleScreen
+import net.minecraft.client.gui.screen.multiplayer.MultiplayerScreen
 import org.slf4j.LoggerFactory
 
 /**
@@ -92,9 +93,9 @@ object BotCore {
 
                 // Si le bot est en PAUSED ou DISCONNECTING, fermer l'ecran
                 if (currentState == BotState.PAUSED || currentState == BotState.DISCONNECTING) {
-                    logger.info("Ecran de deconnexion detecte - retour au menu principal (etat: $currentState)")
+                    logger.info("Ecran de deconnexion detecte - retour au menu serveurs (etat: $currentState)")
                     client.execute {
-                        client.setScreen(TitleScreen())
+                        client.setScreen(MultiplayerScreen(TitleScreen()))
                     }
                 }
             }
@@ -918,6 +919,9 @@ object BotCore {
 
         // Deconnecter du serveur et preparer la reconnexion
         ServerConnector.disconnectAndPrepareReconnect()
+
+        // Calculer et stocker le timestamp de fin de pause
+        stateData.pauseEndTime = System.currentTimeMillis() + (pauseSeconds * 1000L)
 
         // Passer en pause
         stateData.state = BotState.PAUSED
