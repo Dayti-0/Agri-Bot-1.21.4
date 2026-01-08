@@ -8,11 +8,13 @@ import kotlin.math.ceil
  * @param tempsTige Temps de croissance de la tige en minutes
  * @param tempsFruit Temps de croissance des fruits en minutes (0 si pas de fruits additionnels)
  * @param nbFruits Nombre de fruits (1 si fruit unique/pas de fruits)
+ * @param seedType Type d'item utilise comme graine (ex: "wheat_seeds", "pumpkin_seeds")
  */
 data class PlantData(
     val tempsTige: Int,
     val tempsFruit: Int,
-    val nbFruits: Int
+    val nbFruits: Int,
+    val seedType: String
 ) {
     /**
      * Determine le type de clic pour la recolte.
@@ -69,32 +71,32 @@ enum class ClickType {
  */
 object Plants {
     private val plants: Map<String, PlantData> = mapOf(
-        "Concombre" to PlantData(tempsTige = 80, tempsFruit = 0, nbFruits = 1),
-        "Oignons" to PlantData(tempsTige = 40, tempsFruit = 0, nbFruits = 1),
-        "Laitue" to PlantData(tempsTige = 10, tempsFruit = 0, nbFruits = 1),
-        "Pois" to PlantData(tempsTige = 480, tempsFruit = 80, nbFruits = 3),
-        "Tomates" to PlantData(tempsTige = 60, tempsFruit = 20, nbFruits = 2),
-        "Poivron" to PlantData(tempsTige = 120, tempsFruit = 120, nbFruits = 4),
-        "Zucchini" to PlantData(tempsTige = 320, tempsFruit = 0, nbFruits = 1),
-        "Ail" to PlantData(tempsTige = 120, tempsFruit = 0, nbFruits = 1),
-        "Glycine glacee" to PlantData(tempsTige = 20, tempsFruit = 0, nbFruits = 1),
-        "Wazabi" to PlantData(tempsTige = 600, tempsFruit = 0, nbFruits = 1),
-        "Courgette" to PlantData(tempsTige = 1200, tempsFruit = 0, nbFruits = 1),
-        "Piment de cayenne" to PlantData(tempsTige = 240, tempsFruit = 0, nbFruits = 1),
-        "Vixen" to PlantData(tempsTige = 60, tempsFruit = 0, nbFruits = 1),
-        "Lune Akari" to PlantData(tempsTige = 40, tempsFruit = 45, nbFruits = 1),
-        "Nenuphar" to PlantData(tempsTige = 300, tempsFruit = 120, nbFruits = 3),
-        "Chou" to PlantData(tempsTige = 240, tempsFruit = 160, nbFruits = 3),
-        "Plume de lave" to PlantData(tempsTige = 120, tempsFruit = 240, nbFruits = 4),
-        "Fleur du brasier" to PlantData(tempsTige = 40, tempsFruit = 0, nbFruits = 1),
-        "Brocoli" to PlantData(tempsTige = 120, tempsFruit = 80, nbFruits = 3),
-        "Iris Pyrobrase" to PlantData(tempsTige = 1440, tempsFruit = 0, nbFruits = 1),
-        "Venus attrape-mouche" to PlantData(tempsTige = 300, tempsFruit = 60, nbFruits = 1),
-        "Graine de l'enfer" to PlantData(tempsTige = 190, tempsFruit = 0, nbFruits = 1),
-        "Ame gelee" to PlantData(tempsTige = 80, tempsFruit = 180, nbFruits = 5),
-        "Pommes des tenebres" to PlantData(tempsTige = 360, tempsFruit = 180, nbFruits = 4),
-        "Coeur du vide" to PlantData(tempsTige = 960, tempsFruit = 0, nbFruits = 1),
-        "Orchidee Abyssale" to PlantData(tempsTige = 360, tempsFruit = 100, nbFruits = 3)
+        "Concombre" to PlantData(tempsTige = 80, tempsFruit = 0, nbFruits = 1, seedType = "wheat_seeds"),
+        "Oignons" to PlantData(tempsTige = 40, tempsFruit = 0, nbFruits = 1, seedType = "pumpkin_seeds"),
+        "Laitue" to PlantData(tempsTige = 10, tempsFruit = 0, nbFruits = 1, seedType = "wheat_seeds"),
+        "Pois" to PlantData(tempsTige = 480, tempsFruit = 80, nbFruits = 3, seedType = "wheat_seeds"),
+        "Tomates" to PlantData(tempsTige = 60, tempsFruit = 20, nbFruits = 2, seedType = "pumpkin_seeds"),
+        "Poivron" to PlantData(tempsTige = 120, tempsFruit = 120, nbFruits = 4, seedType = "pumpkin_seeds"),
+        "Zucchini" to PlantData(tempsTige = 320, tempsFruit = 0, nbFruits = 1, seedType = "wheat_seeds"),
+        "Ail" to PlantData(tempsTige = 120, tempsFruit = 0, nbFruits = 1, seedType = "pumpkin_seeds"),
+        "Glycine glacee" to PlantData(tempsTige = 20, tempsFruit = 0, nbFruits = 1, seedType = "blue_dye"),
+        "Wazabi" to PlantData(tempsTige = 600, tempsFruit = 0, nbFruits = 1, seedType = "melon_seeds"),
+        "Courgette" to PlantData(tempsTige = 1200, tempsFruit = 0, nbFruits = 1, seedType = "wheat_seeds"),
+        "Piment de cayenne" to PlantData(tempsTige = 240, tempsFruit = 0, nbFruits = 1, seedType = "melon_seeds"),
+        "Vixen" to PlantData(tempsTige = 60, tempsFruit = 0, nbFruits = 1, seedType = "wheat_seeds"),
+        "Lune Akari" to PlantData(tempsTige = 40, tempsFruit = 45, nbFruits = 1, seedType = "sunflower"),
+        "Nenuphar" to PlantData(tempsTige = 300, tempsFruit = 120, nbFruits = 3, seedType = "lily_of_the_valley"),
+        "Chou" to PlantData(tempsTige = 240, tempsFruit = 160, nbFruits = 3, seedType = "wheat_seeds"),
+        "Plume de lave" to PlantData(tempsTige = 120, tempsFruit = 240, nbFruits = 4, seedType = "blaze_powder"),
+        "Fleur du brasier" to PlantData(tempsTige = 40, tempsFruit = 0, nbFruits = 1, seedType = "beetroot_seeds"),
+        "Brocoli" to PlantData(tempsTige = 120, tempsFruit = 80, nbFruits = 3, seedType = "wheat_seeds"),
+        "Iris Pyrobrase" to PlantData(tempsTige = 1440, tempsFruit = 0, nbFruits = 1, seedType = "blaze_powder"),
+        "Venus attrape-mouche" to PlantData(tempsTige = 300, tempsFruit = 60, nbFruits = 1, seedType = "wheat_seeds"),
+        "Graine de l'enfer" to PlantData(tempsTige = 190, tempsFruit = 0, nbFruits = 1, seedType = "wither_rose"),
+        "Ame gelee" to PlantData(tempsTige = 80, tempsFruit = 180, nbFruits = 5, seedType = "snowball"),
+        "Pommes des tenebres" to PlantData(tempsTige = 360, tempsFruit = 180, nbFruits = 4, seedType = "green_dye"),
+        "Coeur du vide" to PlantData(tempsTige = 960, tempsFruit = 0, nbFruits = 1, seedType = "chorus_fruit"),
+        "Orchidee Abyssale" to PlantData(tempsTige = 360, tempsFruit = 100, nbFruits = 3, seedType = "pumpkin_seeds")
     )
 
     /**
