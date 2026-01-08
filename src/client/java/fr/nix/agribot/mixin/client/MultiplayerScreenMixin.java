@@ -31,8 +31,18 @@ public abstract class MultiplayerScreenMixin extends Screen {
 
     @Inject(method = "render", at = @At("TAIL"))
     private void renderSessionTimer(DrawContext context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
+        // Verifier si le bot est active
+        AgriConfig config = AgriBotClient.INSTANCE.getConfig();
+        if (!config.getBotEnabled()) {
+            return;
+        }
+
         // Afficher le temps restant avant la prochaine session si le bot est en pause
         BotState currentState = BotCore.INSTANCE.getStateData().getState();
+        MinecraftClient client = MinecraftClient.getInstance();
+
+        String timeText = null;
+        int textColor = 0x55FF55; // Vert par defaut
 
         if (currentState == BotState.PAUSED) {
             long pauseEndTime = BotCore.INSTANCE.getStateData().getPauseEndTime();
@@ -46,7 +56,6 @@ public abstract class MultiplayerScreenMixin extends Screen {
                 long minutes = (totalSeconds % 3600) / 60;
                 long seconds = totalSeconds % 60;
 
-                String timeText;
                 if (hours > 0) {
                     timeText = String.format("Prochaine session: %dh %02dm %02ds", hours, minutes, seconds);
                 } else if (minutes > 0) {
@@ -54,17 +63,26 @@ public abstract class MultiplayerScreenMixin extends Screen {
                 } else {
                     timeText = String.format("Prochaine session: %ds", seconds);
                 }
-
-                // Dessiner le texte en haut a gauche avec un fond semi-transparent
-                MinecraftClient client = MinecraftClient.getInstance();
-                int textWidth = client.textRenderer.getWidth(timeText);
-
-                // Fond semi-transparent
-                context.fill(8, 8, 16 + textWidth, 22, 0x80000000);
-
-                // Texte en vert
-                context.drawText(client.textRenderer, timeText, 12, 12, 0x55FF55, true);
+            } else {
+                // Temps ecoule, attente de reconnexion
+                timeText = "Reconnexion en cours...";
+                textColor = 0xFFFF55; // Jaune
             }
+        } else if (currentState == BotState.IDLE) {
+            // Bot en attente - afficher un message d'indication
+            timeText = "AgriBot: Pret";
+            textColor = 0xAAAAAA; // Gris
+        }
+
+        // Dessiner le texte si necessaire
+        if (timeText != null) {
+            int textWidth = client.textRenderer.getWidth(timeText);
+
+            // Fond semi-transparent
+            context.fill(8, 8, 16 + textWidth, 22, 0x80000000);
+
+            // Texte
+            context.drawText(client.textRenderer, timeText, 12, 12, textColor, true);
         }
     }
 
