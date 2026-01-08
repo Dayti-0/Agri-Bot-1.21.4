@@ -27,14 +27,9 @@ object ChatListener {
         "a ete teleporte"
     )
 
-    // Patterns indiquant une teleportation initiee par le bot (a ignorer)
-    // Ces messages ne doivent PAS declencher la detection de teleportation forcee
-    private val BOT_INITIATED_TELEPORT_PATTERNS = listOf(
-        "teleporte au home",
-        "teleporte a home",
-        "au home:",
-        "a home:"
-    )
+    // Pattern indiquant une teleportation initiee par le bot (a ignorer)
+    // Format: "Téléporté au home: nomDuHome"
+    private const val HOME_TELEPORT_PATTERN = "teleporte au home:"
 
     // Callbacks enregistres
     private val callbacks = CopyOnWriteArrayList<(String) -> Unit>()
@@ -78,16 +73,14 @@ object ChatListener {
         // Normaliser le message en minuscules et sans accents pour comparaison
         val normalizedMessage = normalizeForComparison(message)
 
-        // Verifier d'abord si c'est une teleportation initiee par le bot (home, etc.)
-        val isBotInitiatedTeleport = BOT_INITIATED_TELEPORT_PATTERNS.any { pattern ->
-            normalizedMessage.contains(pattern)
-        }
+        // Verifier d'abord si c'est une teleportation vers un home (initiee par le bot)
+        val isHomeTeleport = normalizedMessage.contains(HOME_TELEPORT_PATTERN)
 
-        if (!isBotInitiatedTeleport && FORCED_TELEPORT_KEYWORDS.any { keyword -> normalizedMessage.contains(keyword) }) {
+        if (!isHomeTeleport && FORCED_TELEPORT_KEYWORDS.any { keyword -> normalizedMessage.contains(keyword) }) {
             forcedTeleportDetected = true
             logger.warn("Detection: Teleportation forcee (event actif)! Message: $message")
-        } else if (isBotInitiatedTeleport) {
-            logger.debug("Teleportation initiee par le bot ignoree: $message")
+        } else if (isHomeTeleport) {
+            logger.debug("Teleportation home ignoree: $message")
         }
 
         // Appeler les callbacks
