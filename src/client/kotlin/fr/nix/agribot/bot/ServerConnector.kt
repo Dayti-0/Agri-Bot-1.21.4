@@ -429,9 +429,9 @@ object ServerConnector {
             }
         } else if (waitCounter >= 400) { // Timeout 20 secondes
             logger.warn("Timeout attente connexion")
-            // Reessayer la reconnexion
+            // Reessayer la reconnexion avec delai de 5 secondes (anti-spam)
             if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-                state = ConnectionState.RECONNECTING
+                state = ConnectionState.WAITING_RECONNECT
                 waitCounter = 0
             } else {
                 errorMessage = "Echec de reconnexion apres plusieurs tentatives"
@@ -496,9 +496,10 @@ object ServerConnector {
         logger.info("Demarrage reconnexion au serveur: $serverAddress")
         logger.info("========================================")
 
-        reconnectAttempts = 1
-        state = ConnectionState.RECONNECTING
+        reconnectAttempts = 0
+        state = ConnectionState.WAITING_RECONNECT
         waitCounter = 0
+        ChatManager.showActionBar("Reconnexion dans 5s (anti-spam)...", "6")
 
         return true
     }
