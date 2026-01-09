@@ -92,7 +92,13 @@ data class BotStateData(
     /** True si l'eau est suffisante pour se reconnecter apres la pause event */
     var canReconnectAfterEvent: Boolean = true,
     /** True si la prochaine session doit forcer le remplissage complet (apres event) */
-    var forceFullWaterRefill: Boolean = false
+    var forceFullWaterRefill: Boolean = false,
+
+    // Gestion des stations sautees (echec ouverture apres 3 tentatives)
+    /** Nombre de stations sautees car impossibles a ouvrir */
+    var stationsSkipped: Int = 0,
+    /** Liste des noms des stations sautees pour le rapport de fin */
+    var skippedStationNames: MutableList<String> = mutableListOf()
 ) {
     fun reset() {
         state = BotState.IDLE
@@ -105,5 +111,7 @@ data class BotStateData(
         isEventPause = false
         canReconnectAfterEvent = true
         forceFullWaterRefill = false
+        stationsSkipped = 0
+        skippedStationNames.clear()
     }
 }

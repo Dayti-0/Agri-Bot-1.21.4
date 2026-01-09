@@ -236,6 +236,8 @@ object BotCore {
             waterRefillsRemaining = refillsNeeded
             cycleStartTime = cycleStart
             isFirstStationOfSession = true  // Reinitialiser pour chaque nouvelle session
+            stationsSkipped = 0  // Reinitialiser le compteur de stations sautees
+            skippedStationNames.clear()  // Vider la liste des stations sautees
         }
 
         val sessionType = if (isWaterOnly) "Remplissage eau" else "Session farming"
@@ -546,8 +548,18 @@ object BotCore {
                             if (menuOpenRetries >= MAX_MENU_OPEN_RETRIES) {
                                 chestOpenAttempts++
                                 if (chestOpenAttempts >= MAX_CHEST_OPEN_ATTEMPTS) {
-                                    logger.error("Echec definitif ouverture coffre '${config.homeCoffre}' apres $MAX_CHEST_OPEN_ATTEMPTS tentatives")
-                                    stateData.errorMessage = "Impossible d'ouvrir le coffre '${config.homeCoffre}' apres $MAX_CHEST_OPEN_ATTEMPTS tentatives"
+                                    // ERREUR CRITIQUE - Le coffre est indispensable pour la transition de seaux
+                                    logger.error("========================================")
+                                    logger.error("ERREUR CRITIQUE: COFFRE IMPOSSIBLE A OUVRIR")
+                                    logger.error("Coffre: '${config.homeCoffre}'")
+                                    logger.error("Tentatives: $MAX_CHEST_OPEN_ATTEMPTS")
+                                    logger.error("La transition de seaux (16<->1) est impossible!")
+                                    logger.error("Le bot ne peut pas continuer sans acces au coffre.")
+                                    logger.error("========================================")
+
+                                    stateData.errorMessage = "CRITIQUE: Coffre '${config.homeCoffre}' inaccessible - transition seaux impossible"
+                                    ChatManager.showLocalMessage("ERREUR CRITIQUE: Impossible d'ouvrir le coffre pour la transition de seaux!", "c")
+
                                     stateData.state = BotState.ERROR
                                     menuOpenStep = 0
                                     chestOpenAttempts = 0
@@ -573,8 +585,18 @@ object BotCore {
                         } else {
                             chestOpenAttempts++
                             if (chestOpenAttempts >= MAX_CHEST_OPEN_ATTEMPTS) {
-                                logger.error("Coffre '${config.homeCoffre}' ferme pendant stabilisation - Echec definitif")
-                                stateData.errorMessage = "Coffre '${config.homeCoffre}' se ferme de maniere repetee"
+                                // ERREUR CRITIQUE - Le coffre est indispensable pour la transition de seaux
+                                logger.error("========================================")
+                                logger.error("ERREUR CRITIQUE: COFFRE SE FERME DE MANIERE REPETEE")
+                                logger.error("Coffre: '${config.homeCoffre}'")
+                                logger.error("Tentatives: $MAX_CHEST_OPEN_ATTEMPTS")
+                                logger.error("La transition de seaux (16<->1) est impossible!")
+                                logger.error("Le bot ne peut pas continuer sans acces au coffre.")
+                                logger.error("========================================")
+
+                                stateData.errorMessage = "CRITIQUE: Coffre '${config.homeCoffre}' instable - transition seaux impossible"
+                                ChatManager.showLocalMessage("ERREUR CRITIQUE: Le coffre se ferme de maniere repetee!", "c")
+
                                 stateData.state = BotState.ERROR
                                 menuOpenStep = 0
                                 chestOpenAttempts = 0
@@ -752,12 +774,23 @@ object BotCore {
                     if (menuOpenRetries >= MAX_MENU_OPEN_RETRIES) {
                         menuOpenAttempts++
                         if (menuOpenAttempts >= MAX_MENU_OPEN_ATTEMPTS) {
-                            // Echec definitif apres plusieurs tentatives
-                            logger.error("Echec definitif ouverture station '$currentStation' apres $MAX_MENU_OPEN_ATTEMPTS tentatives")
-                            stateData.errorMessage = "Impossible d'ouvrir la station '$currentStation' apres $MAX_MENU_OPEN_ATTEMPTS tentatives"
-                            stateData.state = BotState.ERROR
+                            // Echec definitif apres plusieurs tentatives - PASSER A LA STATION SUIVANTE
+                            logger.warn("========================================")
+                            logger.warn("STATION '$currentStation' IMPOSSIBLE A OUVRIR")
+                            logger.warn("Apres $MAX_MENU_OPEN_ATTEMPTS tentatives - Passage a la suivante")
+                            logger.warn("========================================")
+
+                            // Enregistrer la station sautee
+                            stateData.stationsSkipped++
+                            stateData.skippedStationNames.add(currentStation)
+
+                            ChatManager.showActionBar("Station '$currentStation' sautee (bug) - Suivante...", "e")
+                            ChatManager.showLocalMessage("Station '$currentStation' impossible a ouvrir apres $MAX_MENU_OPEN_ATTEMPTS tentatives - sautee", "e")
+
                             menuOpenStep = 0
                             menuOpenAttempts = 0
+                            stateData.state = BotState.NEXT_STATION
+                            waitMs(500)
                             return
                         }
                         logger.warn("Echec ouverture station '$currentStation' - Timeout (tentative $menuOpenAttempts/$MAX_MENU_OPEN_ATTEMPTS)")
@@ -780,11 +813,23 @@ object BotCore {
                 } else {
                     menuOpenAttempts++
                     if (menuOpenAttempts >= MAX_MENU_OPEN_ATTEMPTS) {
-                        logger.error("Station '$currentStation' fermee pendant stabilisation - Echec definitif")
-                        stateData.errorMessage = "Station '$currentStation' se ferme de maniere repetee"
-                        stateData.state = BotState.ERROR
+                        // Echec definitif - PASSER A LA STATION SUIVANTE
+                        logger.warn("========================================")
+                        logger.warn("STATION '$currentStation' SE FERME DE MANIERE REPETEE")
+                        logger.warn("Apres $MAX_MENU_OPEN_ATTEMPTS tentatives - Passage a la suivante")
+                        logger.warn("========================================")
+
+                        // Enregistrer la station sautee
+                        stateData.stationsSkipped++
+                        stateData.skippedStationNames.add(currentStation)
+
+                        ChatManager.showActionBar("Station '$currentStation' instable - Suivante...", "e")
+                        ChatManager.showLocalMessage("Station '$currentStation' se ferme de maniere repetee - sautee", "e")
+
                         menuOpenStep = 0
                         menuOpenAttempts = 0
+                        stateData.state = BotState.NEXT_STATION
+                        waitMs(500)
                         return
                     }
                     logger.warn("Station '$currentStation' fermee pendant stabilisation - Reessai (tentative $menuOpenAttempts/$MAX_MENU_OPEN_ATTEMPTS)")
@@ -1098,10 +1143,25 @@ object BotCore {
         logger.info("========================================")
         logger.info("Session $sessionType terminee - Duree: ${duration}min")
         logger.info("Stations completees: ${stateData.stationsCompleted}/${stateData.totalStations}")
+        if (stateData.stationsSkipped > 0) {
+            logger.warn("Stations sautees: ${stateData.stationsSkipped}")
+            logger.warn("  -> ${stateData.skippedStationNames.joinToString(", ")}")
+        }
         logger.info("Remplissages restants avant recolte: ${stateData.waterRefillsRemaining}")
         logger.info("========================================")
 
-        ChatManager.showActionBar("Session terminee! ${stateData.stationsCompleted} stations", "a")
+        // Message de fin avec info sur les stations sautees
+        val actionBarMsg = if (stateData.stationsSkipped > 0) {
+            "Session terminee! ${stateData.stationsCompleted} stations (${stateData.stationsSkipped} sautees)"
+        } else {
+            "Session terminee! ${stateData.stationsCompleted} stations"
+        }
+        ChatManager.showActionBar(actionBarMsg, if (stateData.stationsSkipped > 0) "e" else "a")
+
+        // Afficher les stations sautees dans le chat si necessaire
+        if (stateData.stationsSkipped > 0) {
+            ChatManager.showLocalMessage("Stations sautees: ${stateData.skippedStationNames.joinToString(", ")}", "e")
+        }
 
         // Calculer la pause en fonction des remplissages restants
         val pauseSeconds = config.getNextPauseSeconds(stateData.waterRefillsRemaining, stateData.cycleStartTime)
