@@ -71,6 +71,12 @@ object BotCore {
     private var waterBucketsBefore = 0
     private const val MAX_WATER_POURING_CHECKS = 100  // 100 ticks = 5 secondes max
 
+    // Gestion des retries de connexion avec delai anti-spam
+    private var connectionRetryCount = 0
+    private var connectionRetryDelayTicks = 0
+    private const val MAX_CONNECTION_RETRIES = 3
+    private const val CONNECTION_RETRY_DELAY_TICKS = 100  // 5 secondes
+
     /**
      * Initialise le bot et enregistre le tick handler.
      */
@@ -130,6 +136,8 @@ object BotCore {
         if (config.loginPassword.isNotBlank()) {
             logger.info("Mot de passe configure - demarrage connexion automatique")
             ServerConnector.reset()
+            connectionRetryCount = 0
+            connectionRetryDelayTicks = 0
             if (ServerConnector.startConnection()) {
                 stateData.state = BotState.CONNECTING
                 return
@@ -434,6 +442,29 @@ object BotCore {
     }
 
     private fun handleConnecting() {
+        // Si on est en attente de retry, decrementer le delai
+        if (connectionRetryDelayTicks > 0) {
+            connectionRetryDelayTicks--
+            if (connectionRetryDelayTicks % 20 == 0) {
+                val secondsRemaining = connectionRetryDelayTicks / 20
+                ChatManager.showActionBar("Reconnexion dans ${secondsRemaining}s (anti-spam)...", "6")
+            }
+            if (connectionRetryDelayTicks <= 0) {
+                // Delai termine, relancer la connexion
+                connectionRetryCount++
+                logger.info("Retry connexion (tentative $connectionRetryCount/$MAX_CONNECTION_RETRIES)...")
+                ServerConnector.reset()
+                if (ChatManager.isConnected()) {
+                    // Joueur encore sur le serveur, relancer startConnection
+                    ServerConnector.startConnection()
+                } else {
+                    // Joueur deconnecte, utiliser startReconnection
+                    ServerConnector.startReconnection()
+                }
+            }
+            return
+        }
+
         // Deleguer au ServerConnector
         ServerConnector.onTick()
 
@@ -441,13 +472,25 @@ object BotCore {
         if (ServerConnector.isFinished()) {
             if (ServerConnector.isConnected()) {
                 logger.info("Connexion automatique reussie - demarrage session farming")
+                connectionRetryCount = 0  // Reset pour la prochaine fois
                 startFarmingSession()
             } else {
-                // Erreur de connexion avec contexte detaille
+                // Erreur de connexion - verifier si on peut retenter
                 val errorContext = "Connexion serveur '${config.serverAddress}' echouee: ${ServerConnector.errorMessage}"
                 logger.error(errorContext)
-                stateData.errorMessage = errorContext
-                stateData.state = BotState.ERROR
+
+                if (connectionRetryCount < MAX_CONNECTION_RETRIES) {
+                    // Retenter apres un delai de 5 secondes (anti-spam)
+                    logger.info("Retry connexion dans 5 secondes (tentative ${connectionRetryCount + 1}/$MAX_CONNECTION_RETRIES)...")
+                    ChatManager.showActionBar("Echec connexion - retry dans 5s...", "e")
+                    connectionRetryDelayTicks = CONNECTION_RETRY_DELAY_TICKS
+                } else {
+                    // Trop de tentatives, abandonner
+                    logger.error("Echec connexion apres $MAX_CONNECTION_RETRIES tentatives")
+                    stateData.errorMessage = "$errorContext (apres $MAX_CONNECTION_RETRIES tentatives)"
+                    stateData.state = BotState.ERROR
+                    connectionRetryCount = 0  // Reset pour la prochaine fois
+                }
             }
         }
     }
@@ -1150,6 +1193,8 @@ object BotCore {
         }
 
         // Lancer la reconnexion au serveur
+        connectionRetryCount = 0
+        connectionRetryDelayTicks = 0
         if (ServerConnector.startReconnection()) {
             stateData.state = BotState.CONNECTING
         } else {
