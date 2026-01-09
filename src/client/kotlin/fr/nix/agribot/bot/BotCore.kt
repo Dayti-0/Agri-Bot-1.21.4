@@ -57,6 +57,14 @@ object BotCore {
     private const val MAX_MENU_OPEN_RETRIES = 50  // 50 x 100ms = 5 secondes max
     private const val MENU_STABILIZATION_TICKS = 40  // 2 secondes de stabilisation (40 ticks)
 
+    // Compteur de tentatives globales d'ouverture de menu (pour echec definitif)
+    private var menuOpenAttempts = 0
+    private const val MAX_MENU_OPEN_ATTEMPTS = 3  // Nombre max de tentatives avant echec definitif
+
+    // Compteur de tentatives globales d'ouverture de coffre
+    private var chestOpenAttempts = 0
+    private const val MAX_CHEST_OPEN_ATTEMPTS = 3
+
     // Sous-etats pour le versement d'eau (non-bloquant)
     private var waterPouringStep = 0
     private var waterPouringCheckCount = 0
@@ -261,6 +269,22 @@ object BotCore {
     private fun onTick() {
         tickCounter++
 
+        // Verification periodique de la connexion (sauf si en pause, deconnexion ou idle)
+        if (stateData.state != BotState.IDLE &&
+            stateData.state != BotState.PAUSED &&
+            stateData.state != BotState.DISCONNECTING &&
+            stateData.state != BotState.ERROR) {
+            if (!periodicConnectionCheck()) {
+                // Deconnexion detectee - gerer selon l'etat actuel
+                if (stateData.state != BotState.CONNECTING) {
+                    logger.error("Deconnexion inattendue detectee en etat ${stateData.state}")
+                    stateData.errorMessage = "Connexion perdue (etat: ${stateData.state})"
+                    stateData.state = BotState.ERROR
+                    return
+                }
+            }
+        }
+
         // Verifier si une teleportation forcee a ete detectee (event actif)
         // Sauf si on est deja en pause ou en deconnexion ou idle
         if (ChatListener.forcedTeleportDetected &&
@@ -312,6 +336,41 @@ object BotCore {
      */
     private fun waitMs(ms: Int) {
         wait(ms * TICKS_PER_SECOND / 1000)
+    }
+
+    /**
+     * Verifie si le joueur est toujours connecte au serveur.
+     * Si deconnecte, passe en etat d'erreur avec un message explicite.
+     * @param operation Nom de l'operation en cours (pour le message d'erreur)
+     * @return true si connecte, false si deconnecte
+     */
+    private fun checkConnection(operation: String): Boolean {
+        if (!ChatManager.isConnected()) {
+            logger.error("Connexion perdue pendant: $operation")
+            stateData.errorMessage = "Connexion perdue pendant: $operation"
+            stateData.state = BotState.ERROR
+            return false
+        }
+        return true
+    }
+
+    /**
+     * Verifie la connexion de maniere periodique (tous les 100 ticks = 5 secondes).
+     * Appelee depuis onTick() pour detecter les deconnexions silencieuses.
+     */
+    private var connectionCheckCounter = 0
+    private const val CONNECTION_CHECK_INTERVAL = 100 // 5 secondes
+
+    private fun periodicConnectionCheck(): Boolean {
+        connectionCheckCounter++
+        if (connectionCheckCounter >= CONNECTION_CHECK_INTERVAL) {
+            connectionCheckCounter = 0
+            if (!ChatManager.isConnected()) {
+                logger.warn("Deconnexion detectee lors de la verification periodique")
+                return false
+            }
+        }
+        return true
     }
 
     // ==================== HANDLERS ====================
@@ -384,9 +443,10 @@ object BotCore {
                 logger.info("Connexion automatique reussie - demarrage session farming")
                 startFarmingSession()
             } else {
-                // Erreur de connexion
-                logger.error("Echec connexion automatique: ${ServerConnector.errorMessage}")
-                stateData.errorMessage = ServerConnector.errorMessage
+                // Erreur de connexion avec contexte detaille
+                val errorContext = "Connexion serveur '${config.serverAddress}' echouee: ${ServerConnector.errorMessage}"
+                logger.error(errorContext)
+                stateData.errorMessage = errorContext
                 stateData.state = BotState.ERROR
             }
         }
@@ -443,14 +503,15 @@ object BotCore {
 
                         // Verifier d'abord si un coffre est deja ouvert
                         if (MenuDetector.isChestOrContainerOpen()) {
-                            logger.info("Coffre deja ouvert - Pret pour operations")
+                            logger.info("Coffre '${config.homeCoffre}' deja ouvert - Pret pour operations")
                             MenuDetector.debugCurrentMenu()
                             bucketManagementStep = 2
                             menuOpenStep = 0
+                            chestOpenAttempts = 0
                             return
                         }
 
-                        logger.info("Gestion seaux - Ouverture coffre")
+                        logger.info("Gestion seaux - Ouverture coffre '${config.homeCoffre}' (tentative ${chestOpenAttempts + 1}/$MAX_CHEST_OPEN_ATTEMPTS)")
                         ActionManager.rightClick()
                         menuOpenStep = 1
                         menuOpenRetries = 0
@@ -460,14 +521,15 @@ object BotCore {
                         // Etape intermediaire apres le delai supplementaire
                         // Verifier d'abord si un coffre est deja ouvert
                         if (MenuDetector.isChestOrContainerOpen()) {
-                            logger.info("Coffre deja ouvert - Pret pour operations")
+                            logger.info("Coffre '${config.homeCoffre}' deja ouvert - Pret pour operations")
                             MenuDetector.debugCurrentMenu()
                             bucketManagementStep = 2
                             menuOpenStep = 0
+                            chestOpenAttempts = 0
                             return
                         }
 
-                        logger.info("Gestion seaux - Ouverture coffre")
+                        logger.info("Gestion seaux - Ouverture coffre '${config.homeCoffre}' (tentative ${chestOpenAttempts + 1}/$MAX_CHEST_OPEN_ATTEMPTS)")
                         ActionManager.rightClick()
                         menuOpenStep = 1
                         menuOpenRetries = 0
@@ -476,14 +538,23 @@ object BotCore {
                     1 -> {
                         // Attendre que le coffre soit ouvert
                         if (MenuDetector.isChestOrContainerOpen()) {
-                            logger.debug("Coffre detecte - attente stabilisation")
+                            logger.debug("Coffre '${config.homeCoffre}' detecte - attente stabilisation")
                             menuOpenStep = 2
                             wait(MENU_STABILIZATION_TICKS)  // Stabilisation
                         } else {
                             menuOpenRetries++
                             if (menuOpenRetries >= MAX_MENU_OPEN_RETRIES) {
-                                logger.warn("Echec ouverture coffre - Timeout")
-                                ChatManager.showActionBar("Echec ouverture coffre!", "c")
+                                chestOpenAttempts++
+                                if (chestOpenAttempts >= MAX_CHEST_OPEN_ATTEMPTS) {
+                                    logger.error("Echec definitif ouverture coffre '${config.homeCoffre}' apres $MAX_CHEST_OPEN_ATTEMPTS tentatives")
+                                    stateData.errorMessage = "Impossible d'ouvrir le coffre '${config.homeCoffre}' apres $MAX_CHEST_OPEN_ATTEMPTS tentatives"
+                                    stateData.state = BotState.ERROR
+                                    menuOpenStep = 0
+                                    chestOpenAttempts = 0
+                                    return
+                                }
+                                logger.warn("Echec ouverture coffre '${config.homeCoffre}' - Timeout (tentative $chestOpenAttempts/$MAX_CHEST_OPEN_ATTEMPTS)")
+                                ChatManager.showActionBar("Echec ouverture coffre - Reessai...", "e")
                                 menuOpenStep = 0
                                 waitMs(1000)  // Reessayer apres 1s
                             } else {
@@ -494,12 +565,22 @@ object BotCore {
                     2 -> {
                         // Stabilisation terminee, verifier que le coffre est toujours ouvert
                         if (MenuDetector.isChestOrContainerOpen()) {
-                            logger.info("Coffre ouvert et charge - Pret pour operations")
+                            logger.info("Coffre '${config.homeCoffre}' ouvert et charge - Pret pour operations")
                             MenuDetector.debugCurrentMenu()
                             bucketManagementStep = 2
                             menuOpenStep = 0
+                            chestOpenAttempts = 0
                         } else {
-                            logger.warn("Coffre ferme pendant stabilisation - Reessai")
+                            chestOpenAttempts++
+                            if (chestOpenAttempts >= MAX_CHEST_OPEN_ATTEMPTS) {
+                                logger.error("Coffre '${config.homeCoffre}' ferme pendant stabilisation - Echec definitif")
+                                stateData.errorMessage = "Coffre '${config.homeCoffre}' se ferme de maniere repetee"
+                                stateData.state = BotState.ERROR
+                                menuOpenStep = 0
+                                chestOpenAttempts = 0
+                                return
+                            }
+                            logger.warn("Coffre '${config.homeCoffre}' ferme pendant stabilisation - Reessai (tentative $chestOpenAttempts/$MAX_CHEST_OPEN_ATTEMPTS)")
                             menuOpenStep = 0
                             waitMs(500)
                         }
@@ -622,19 +703,27 @@ object BotCore {
 
     private fun handleOpeningStation() {
         // Ouverture de la station (non-bloquant)
+        val stations = config.getActiveStations()
+        val currentStation = if (stateData.currentStationIndex < stations.size) {
+            stations[stateData.currentStationIndex]
+        } else {
+            "Station ${stateData.currentStationIndex + 1}"
+        }
+
         when (menuOpenStep) {
             0 -> {
                 // Verifier d'abord si un menu est deja ouvert
                 if (MenuDetector.isSimpleMenuOpen()) {
-                    logger.info("Station deja ouverte - Pret pour recolte")
+                    logger.info("Station '$currentStation' deja ouverte - Pret pour recolte")
                     MenuDetector.debugCurrentMenu()
                     stateData.state = BotState.HARVESTING
                     menuOpenStep = 0
+                    menuOpenAttempts = 0  // Reset le compteur de tentatives
                     return
                 }
 
                 // Clic droit pour ouvrir la station
-                logger.info("Ouverture station - clic droit")
+                logger.info("Ouverture station '$currentStation' - clic droit (tentative ${menuOpenAttempts + 1}/$MAX_MENU_OPEN_ATTEMPTS)")
                 ActionManager.rightClick()
                 menuOpenStep = 1
                 menuOpenRetries = 0
@@ -651,9 +740,9 @@ object BotCore {
                     }
 
                     if (stateData.isFirstStationOfSession) {
-                        logger.info("Premiere station - attente stabilisation prolongee (${stabilizationTicks / 20}s)")
+                        logger.info("Premiere station '$currentStation' - attente stabilisation prolongee (${stabilizationTicks / 20}s)")
                     } else {
-                        logger.debug("Station detectee - attente stabilisation")
+                        logger.debug("Station '$currentStation' detectee - attente stabilisation")
                     }
 
                     menuOpenStep = 2
@@ -661,8 +750,18 @@ object BotCore {
                 } else {
                     menuOpenRetries++
                     if (menuOpenRetries >= MAX_MENU_OPEN_RETRIES) {
-                        logger.warn("Echec ouverture station - Timeout")
-                        ChatManager.showActionBar("Echec ouverture station!", "c")
+                        menuOpenAttempts++
+                        if (menuOpenAttempts >= MAX_MENU_OPEN_ATTEMPTS) {
+                            // Echec definitif apres plusieurs tentatives
+                            logger.error("Echec definitif ouverture station '$currentStation' apres $MAX_MENU_OPEN_ATTEMPTS tentatives")
+                            stateData.errorMessage = "Impossible d'ouvrir la station '$currentStation' apres $MAX_MENU_OPEN_ATTEMPTS tentatives"
+                            stateData.state = BotState.ERROR
+                            menuOpenStep = 0
+                            menuOpenAttempts = 0
+                            return
+                        }
+                        logger.warn("Echec ouverture station '$currentStation' - Timeout (tentative $menuOpenAttempts/$MAX_MENU_OPEN_ATTEMPTS)")
+                        ChatManager.showActionBar("Echec ouverture '$currentStation' - Reessai...", "e")
                         menuOpenStep = 0
                         waitMs(1000)  // Reessayer apres 1s
                     } else {
@@ -673,12 +772,22 @@ object BotCore {
             2 -> {
                 // Stabilisation terminee, verifier que le menu est toujours ouvert
                 if (MenuDetector.isSimpleMenuOpen()) {
-                    logger.info("Station ouverte et chargee - Pret pour recolte")
+                    logger.info("Station '$currentStation' ouverte et chargee - Pret pour recolte")
                     MenuDetector.debugCurrentMenu()
                     stateData.state = BotState.HARVESTING
                     menuOpenStep = 0
+                    menuOpenAttempts = 0  // Reset le compteur de tentatives
                 } else {
-                    logger.warn("Station fermee pendant stabilisation - Reessai")
+                    menuOpenAttempts++
+                    if (menuOpenAttempts >= MAX_MENU_OPEN_ATTEMPTS) {
+                        logger.error("Station '$currentStation' fermee pendant stabilisation - Echec definitif")
+                        stateData.errorMessage = "Station '$currentStation' se ferme de maniere repetee"
+                        stateData.state = BotState.ERROR
+                        menuOpenStep = 0
+                        menuOpenAttempts = 0
+                        return
+                    }
+                    logger.warn("Station '$currentStation' fermee pendant stabilisation - Reessai (tentative $menuOpenAttempts/$MAX_MENU_OPEN_ATTEMPTS)")
                     menuOpenStep = 0
                     waitMs(500)
                 }
@@ -1044,15 +1153,46 @@ object BotCore {
         if (ServerConnector.startReconnection()) {
             stateData.state = BotState.CONNECTING
         } else {
-            logger.error("Echec du demarrage de la reconnexion: ${ServerConnector.errorMessage}")
-            stateData.errorMessage = ServerConnector.errorMessage
+            val errorContext = "Reconnexion au serveur '${config.serverAddress}' impossible: ${ServerConnector.errorMessage}"
+            logger.error(errorContext)
+            stateData.errorMessage = errorContext
             stateData.state = BotState.ERROR
         }
     }
 
     private fun handleError() {
-        logger.error("Erreur: ${stateData.errorMessage}")
-        ChatManager.showActionBar("Erreur: ${stateData.errorMessage}", "c")
+        // Construire un message d'erreur detaille avec le contexte
+        val stations = config.getActiveStations()
+        val currentStation = if (stateData.currentStationIndex < stations.size) {
+            stations[stateData.currentStationIndex]
+        } else {
+            "N/A"
+        }
+
+        val contextInfo = buildString {
+            appendLine("========== ERREUR BOTCORE ==========")
+            appendLine("Message: ${stateData.errorMessage}")
+            appendLine("Station actuelle: $currentStation (${stateData.currentStationIndex + 1}/${stateData.totalStations})")
+            appendLine("Stations completees: ${stateData.stationsCompleted}")
+            appendLine("Session eau uniquement: ${stateData.isWaterOnlySession}")
+            appendLine("Remplissages restants: ${stateData.waterRefillsRemaining}")
+            appendLine("Plante: ${config.selectedPlant}")
+            appendLine("=====================================")
+        }
+
+        logger.error(contextInfo)
+
+        // Message court pour l'action bar
+        val shortMessage = if (stateData.errorMessage.length > 40) {
+            stateData.errorMessage.take(40) + "..."
+        } else {
+            stateData.errorMessage
+        }
+        ChatManager.showActionBar("Erreur: $shortMessage", "c")
+
+        // Afficher le message detaille dans le chat local
+        ChatManager.showLocalMessage("Erreur sur '$currentStation': ${stateData.errorMessage}", "c")
+
         stop()
     }
 }
