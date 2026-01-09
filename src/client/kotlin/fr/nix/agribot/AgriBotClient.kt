@@ -18,6 +18,14 @@ object AgriBotClient : ClientModInitializer {
     lateinit var config: AgriConfig
         private set
 
+    // Cache pour le rendu du timer (evite recalculs a chaque frame)
+    private var cachedTimerText: String? = null
+    private var cachedTimerColor: Int = 0x55FF55
+    private var lastTimerUpdateTime: Long = 0
+    private var lastBotEnabled: Boolean = false
+    private var lastBotState: BotState? = null
+    private var lastPauseEndTime: Long = 0
+
     override fun onInitializeClient() {
         logger.info("==================================================")
         logger.info("AgriBot - Initialisation du client")
@@ -70,80 +78,89 @@ object AgriBotClient : ClientModInitializer {
 
     /**
      * Affiche le timer de session sur l'ecran multijoueur.
+     * Optimise: ne recalcule le texte que toutes les secondes ou si l'etat change.
      */
     private fun renderSessionTimer(context: net.minecraft.client.gui.DrawContext) {
         val client = MinecraftClient.getInstance()
+        val currentTime = System.currentTimeMillis()
 
-        var timeText: String? = null
-        var textColor = 0x55FF55 // Vert par defaut
+        // Verifier si on doit recalculer le cache (toutes les secondes ou si etat change)
+        val currentBotEnabled = config.botEnabled
+        val currentBotState = BotCore.stateData.state
+        val currentPauseEndTime = BotCore.stateData.pauseEndTime
 
-        // Si le bot n'est pas active, verifier la configuration et afficher l'etat
+        val needsUpdate = cachedTimerText == null ||
+                          currentTime - lastTimerUpdateTime >= 1000 ||
+                          currentBotEnabled != lastBotEnabled ||
+                          currentBotState != lastBotState ||
+                          (currentBotState == BotState.PAUSED && currentPauseEndTime != lastPauseEndTime)
+
+        if (needsUpdate) {
+            lastTimerUpdateTime = currentTime
+            lastBotEnabled = currentBotEnabled
+            lastBotState = currentBotState
+            lastPauseEndTime = currentPauseEndTime
+
+            // Recalculer le texte et la couleur
+            updateTimerCache(currentTime)
+        }
+
+        // Dessiner le texte cache si disponible
+        val text = cachedTimerText
+        if (text != null) {
+            val textWidth = client.textRenderer.getWidth(text)
+            context.fill(8, 8, 16 + textWidth, 22, 0x80000000.toInt())
+            context.drawText(client.textRenderer, text, 12, 12, cachedTimerColor, true)
+        }
+    }
+
+    /**
+     * Met a jour le cache du timer.
+     */
+    private fun updateTimerCache(currentTime: Long) {
+        cachedTimerText = null
+        cachedTimerColor = 0x55FF55
+
         if (!config.botEnabled) {
-            // Verifier les erreurs de configuration
             val hasPassword = config.loginPassword.isNotBlank()
             val stationCount = config.getActiveStationCount()
-            val hasStations = stationCount > 0
 
             if (!hasPassword) {
-                timeText = "AgriBot: Mot de passe manquant"
-                textColor = 0xFF5555 // Rouge
-            } else if (!hasStations) {
-                timeText = "AgriBot: 0 stations"
-                textColor = 0xFF5555 // Rouge
+                cachedTimerText = "AgriBot: Mot de passe manquant"
+                cachedTimerColor = 0xFF5555
+            } else if (stationCount == 0) {
+                cachedTimerText = "AgriBot: 0 stations"
+                cachedTimerColor = 0xFF5555
             } else {
-                // Tout est configure, pret a demarrer
-                timeText = "AgriBot: Pret $stationCount Stations"
-                textColor = 0x55FF55 // Vert clair
+                cachedTimerText = "AgriBot: Pret $stationCount Stations"
+                cachedTimerColor = 0x55FF55
             }
         } else {
-            val currentState = BotCore.stateData.state
-
-            when (currentState) {
+            when (BotCore.stateData.state) {
                 BotState.PAUSED -> {
-                    val pauseEndTime = BotCore.stateData.pauseEndTime
-                    val currentTime = System.currentTimeMillis()
-                    val remainingMs = pauseEndTime - currentTime
-
+                    val remainingMs = BotCore.stateData.pauseEndTime - currentTime
                     if (remainingMs > 0) {
-                        // Formater le temps restant
                         val totalSeconds = remainingMs / 1000
                         val hours = totalSeconds / 3600
                         val minutes = (totalSeconds % 3600) / 60
                         val seconds = totalSeconds % 60
 
-                        timeText = if (hours > 0) {
-                            String.format("Prochaine session: %dh %02dm %02ds", hours, minutes, seconds)
-                        } else if (minutes > 0) {
-                            String.format("Prochaine session: %dm %02ds", minutes, seconds)
-                        } else {
-                            String.format("Prochaine session: %ds", seconds)
+                        cachedTimerText = when {
+                            hours > 0 -> "Prochaine session: ${hours}h ${minutes.toString().padStart(2, '0')}m ${seconds.toString().padStart(2, '0')}s"
+                            minutes > 0 -> "Prochaine session: ${minutes}m ${seconds.toString().padStart(2, '0')}s"
+                            else -> "Prochaine session: ${seconds}s"
                         }
                     } else {
-                        // Temps ecoule, attente de reconnexion
-                        timeText = "Reconnexion en cours..."
-                        textColor = 0xFFFF55 // Jaune
+                        cachedTimerText = "Reconnexion en cours..."
+                        cachedTimerColor = 0xFFFF55
                     }
                 }
                 BotState.IDLE -> {
-                    // Bot en attente - afficher un message d'indication
-                    timeText = "AgriBot: Pret"
-                    textColor = 0xAAAAAA // Gris
+                    cachedTimerText = "AgriBot: Pret"
+                    cachedTimerColor = 0xAAAAAA
                 }
-                else -> {
-                    // Autres etats - ne rien afficher
-                }
+                else -> { }
             }
-        }
-
-        // Dessiner le texte si necessaire
-        if (timeText != null) {
-            val textWidth = client.textRenderer.getWidth(timeText)
-
-            // Fond semi-transparent
-            context.fill(8, 8, 16 + textWidth, 22, 0x80000000.toInt())
-
-            // Texte
-            context.drawText(client.textRenderer, timeText, 12, 12, textColor, true)
         }
     }
 }

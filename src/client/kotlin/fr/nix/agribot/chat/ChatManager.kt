@@ -12,6 +12,33 @@ object ChatManager {
     private val client: MinecraftClient
         get() = MinecraftClient.getInstance()
 
+    // === CACHE CONNEXION ===
+    // Evite les verifications repetees dans le meme tick
+    private var cacheTickId: Long = -1
+    private var cachedIsConnected: Boolean = false
+    private var globalTickCounter: Long = 0
+
+    /**
+     * Doit etre appele une fois par tick pour permettre l'invalidation du cache.
+     * Appele automatiquement par BotCore.
+     */
+    fun onTick() {
+        globalTickCounter++
+    }
+
+    /**
+     * Invalide le cache si necessaire (nouveau tick).
+     */
+    private fun ensureCacheValid() {
+        if (cacheTickId == globalTickCounter) {
+            return // Cache valide
+        }
+
+        // Invalider et recalculer
+        cacheTickId = globalTickCounter
+        cachedIsConnected = client.player != null && client.networkHandler != null
+    }
+
     /**
      * Envoie une commande dans le chat (avec /).
      * @param command La commande sans le / (ex: "home station1")
@@ -97,9 +124,11 @@ object ChatManager {
 
     /**
      * Verifie si le joueur est connecte a un serveur.
+     * OPTIMISE: utilise le cache pour eviter les verifications repetees.
      */
     fun isConnected(): Boolean {
-        return client.player != null && client.networkHandler != null
+        ensureCacheValid()
+        return cachedIsConnected
     }
 
     /**
