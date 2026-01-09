@@ -53,43 +53,54 @@ object ChatListener {
 
     /**
      * Appele par le Mixin quand un message de chat est recu.
+     * Cette methode est protegee contre les exceptions pour eviter de bloquer le jeu.
      */
     fun onChatMessage(message: String) {
-        lastMessage = message
+        try {
+            lastMessage = message
 
-        // Detection station pleine
-        if (message.contains(STATION_FULL_MESSAGE)) {
-            stationFullDetected = true
-            logger.info("Detection: Station pleine!")
-        }
-
-        // Detection teleportation
-        if (message.contains(TELEPORT_MESSAGE)) {
-            teleportDetected = true
-            logger.debug("Detection: Teleportation effectuee")
-        }
-
-        // Detection teleportation forcee (event actif)
-        // Normaliser le message en minuscules et sans accents pour comparaison
-        val normalizedMessage = normalizeForComparison(message)
-
-        // Verifier d'abord si c'est une teleportation vers un home (initiee par le bot)
-        val isHomeTeleport = normalizedMessage.contains(HOME_TELEPORT_PATTERN)
-
-        if (!isHomeTeleport && FORCED_TELEPORT_KEYWORDS.any { keyword -> normalizedMessage.contains(keyword) }) {
-            forcedTeleportDetected = true
-            logger.warn("Detection: Teleportation forcee (event actif)! Message: $message")
-        } else if (isHomeTeleport) {
-            logger.debug("Teleportation home ignoree: $message")
-        }
-
-        // Appeler les callbacks
-        callbacks.forEach { callback ->
-            try {
-                callback(message)
-            } catch (e: Exception) {
-                logger.error("Erreur dans callback chat: ${e.message}")
+            // Detection station pleine
+            if (message.contains(STATION_FULL_MESSAGE)) {
+                stationFullDetected = true
+                logger.info("Detection: Station pleine!")
             }
+
+            // Detection teleportation
+            if (message.contains(TELEPORT_MESSAGE)) {
+                teleportDetected = true
+                logger.debug("Detection: Teleportation effectuee")
+            }
+
+            // Detection teleportation forcee (event actif)
+            // Normaliser le message en minuscules et sans accents pour comparaison
+            val normalizedMessage = normalizeForComparison(message)
+
+            // Verifier d'abord si c'est une teleportation vers un home (initiee par le bot)
+            val isHomeTeleport = normalizedMessage.contains(HOME_TELEPORT_PATTERN)
+
+            if (!isHomeTeleport && FORCED_TELEPORT_KEYWORDS.any { keyword -> normalizedMessage.contains(keyword) }) {
+                forcedTeleportDetected = true
+                logger.warn("Detection: Teleportation forcee (event actif)! Message: $message")
+            } else if (isHomeTeleport) {
+                logger.debug("Teleportation home ignoree: $message")
+            }
+
+            // Appeler les callbacks de maniere isolee (un echec ne bloque pas les autres)
+            callbacks.forEach { callback ->
+                try {
+                    callback(message)
+                } catch (e: Exception) {
+                    // Log detaille de l'erreur avec la stack trace
+                    logger.error("Erreur dans callback chat pour message '$message': ${e.message}")
+                    logger.error("Stack trace: ${e.stackTraceToString()}")
+                    // Continuer avec les autres callbacks malgre l'erreur
+                }
+            }
+        } catch (e: Exception) {
+            // Protection globale pour eviter de bloquer le jeu en cas d'erreur inattendue
+            logger.error("Erreur critique dans onChatMessage: ${e.message}")
+            logger.error("Message qui a cause l'erreur: $message")
+            logger.error("Stack trace: ${e.stackTraceToString()}")
         }
     }
 

@@ -57,6 +57,9 @@ data class AgriConfig(
         private val gson: Gson = GsonBuilder().setPrettyPrinting().create()
         private var instance: AgriConfig? = null
 
+        // Version du schema de configuration (incrementer lors de changements incompatibles)
+        const val CONFIG_VERSION = 1
+
         // Duree de pause en cas d'event (2 heures)
         const val EVENT_PAUSE_SECONDS = 2 * 60 * 60 // 2 heures = 7200 secondes
         const val EVENT_PAUSE_MINUTES = 120 // 2 heures en minutes
@@ -90,8 +93,52 @@ data class AgriConfig(
             return File(configDir, "agribot.json")
         }
 
+        private fun getBackupFile(): File {
+            val configDir = FabricLoader.getInstance().configDir.toFile()
+            return File(configDir, "agribot.json.backup")
+        }
+
+        /**
+         * Cree une sauvegarde du fichier de configuration actuel.
+         */
+        private fun createBackup() {
+            try {
+                val configFile = getConfigFile()
+                val backupFile = getBackupFile()
+                if (configFile.exists()) {
+                    configFile.copyTo(backupFile, overwrite = true)
+                    logger.debug("Backup de configuration cree: ${backupFile.absolutePath}")
+                }
+            } catch (e: Exception) {
+                logger.warn("Impossible de creer le backup de configuration: ${e.message}")
+            }
+        }
+
+        /**
+         * Restaure la configuration depuis le backup.
+         * @return true si la restauration a reussi, false sinon
+         */
+        private fun restoreFromBackup(): AgriConfig? {
+            try {
+                val backupFile = getBackupFile()
+                if (backupFile.exists()) {
+                    val json = backupFile.readText()
+                    val config = gson.fromJson(json, AgriConfig::class.java)
+                    if (config.validate()) {
+                        logger.info("Configuration restauree depuis le backup")
+                        return config
+                    }
+                }
+            } catch (e: Exception) {
+                logger.warn("Impossible de restaurer depuis le backup: ${e.message}")
+            }
+            return null
+        }
+
         /**
          * Charge la configuration depuis le fichier.
+         * Cree un backup avant le chargement et valide la configuration.
+         * En cas d'erreur, tente de restaurer depuis le backup.
          */
         fun load(): AgriConfig {
             val file = getConfigFile()
@@ -99,11 +146,40 @@ data class AgriConfig(
             if (file.exists()) {
                 try {
                     val json = file.readText()
-                    instance = gson.fromJson(json, AgriConfig::class.java)
-                    logger.info("Configuration chargee depuis ${file.absolutePath}")
+                    val loadedConfig = gson.fromJson(json, AgriConfig::class.java)
+
+                    // Valider la configuration chargee
+                    if (loadedConfig != null && loadedConfig.validate()) {
+                        instance = loadedConfig
+                        logger.info("Configuration chargee et validee depuis ${file.absolutePath}")
+                        // Creer un backup de la config valide
+                        createBackup()
+                    } else {
+                        // Configuration invalide, tenter la restauration
+                        logger.warn("Configuration invalide detectee, tentative de restauration depuis backup")
+                        val restored = restoreFromBackup()
+                        if (restored != null) {
+                            instance = restored
+                            // Sauvegarder la config restauree
+                            instance!!.save()
+                        } else {
+                            logger.warn("Restauration impossible, utilisation des valeurs par defaut")
+                            instance = AgriConfig()
+                            instance!!.save()
+                        }
+                    }
                 } catch (e: Exception) {
                     logger.error("Erreur lors du chargement de la config: ${e.message}")
-                    instance = AgriConfig()
+                    // Tenter la restauration depuis le backup
+                    val restored = restoreFromBackup()
+                    if (restored != null) {
+                        instance = restored
+                        instance!!.save()
+                    } else {
+                        logger.warn("Utilisation des valeurs par defaut")
+                        instance = AgriConfig()
+                        instance!!.save()
+                    }
                 }
             } else {
                 logger.info("Aucune configuration trouvee, creation des valeurs par defaut")
@@ -124,16 +200,64 @@ data class AgriConfig(
 
     /**
      * Sauvegarde la configuration dans le fichier.
+     * Cree un backup avant la sauvegarde si la config actuelle est valide.
      */
     fun save() {
         try {
             val file = getConfigFile()
             file.parentFile?.mkdirs()
+
+            // Creer un backup avant de sauvegarder (si le fichier existe deja)
+            if (file.exists()) {
+                Companion.createBackup()
+            }
+
             file.writeText(gson.toJson(this))
             logger.info("Configuration sauvegardee dans ${file.absolutePath}")
         } catch (e: Exception) {
             logger.error("Erreur lors de la sauvegarde de la config: ${e.message}")
         }
+    }
+
+    /**
+     * Valide la configuration.
+     * Verifie que toutes les valeurs sont dans des plages acceptables.
+     * @return true si la configuration est valide, false sinon
+     */
+    fun validate(): Boolean {
+        // Verifier que les delais sont positifs
+        if (delayShort < 0 || delayMedium < 0 || delayLong < 0 ||
+            delayAfterTeleport < 0 || delayAfterOpenMenu < 0 ||
+            delayBetweenBuckets < 0 || delayAfterCommand < 0) {
+            logger.warn("Validation echouee: delais negatifs detectes")
+            return false
+        }
+
+        // Verifier que le growthBoost est dans une plage raisonnable (0-1000%)
+        if (growthBoost < 0 || growthBoost > 1000) {
+            logger.warn("Validation echouee: growthBoost hors limites ($growthBoost)")
+            return false
+        }
+
+        // Verifier que la duree d'eau est valide
+        if (waterDurationMinutes !in WATER_DURATIONS) {
+            logger.warn("Validation echouee: waterDurationMinutes invalide ($waterDurationMinutes)")
+            return false
+        }
+
+        // Verifier que les stations ne sont pas null
+        if (stations.size != 30) {
+            logger.warn("Validation echouee: nombre de stations incorrect (${stations.size})")
+            return false
+        }
+
+        // Verifier que la plante selectionnee existe
+        if (selectedPlant.isBlank() || Plants.get(selectedPlant) == null) {
+            logger.warn("Validation echouee: plante selectionnee invalide ($selectedPlant)")
+            return false
+        }
+
+        return true
     }
 
     /**
