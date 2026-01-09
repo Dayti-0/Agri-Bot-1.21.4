@@ -134,26 +134,27 @@ object BucketManager {
 
     /**
      * Verifie si on a des seaux d'eau disponibles.
+     * Optimise: utilise directement InventoryManager (cache hotbar).
      */
     fun hasWaterBuckets(): Boolean {
-        refreshState()
-        return state.waterBucketsCount > 0
+        return InventoryManager.countWaterBucketsInHotbar() > 0
     }
 
     /**
      * Verifie si on a des seaux vides a remplir.
+     * Optimise: utilise directement InventoryManager (cache hotbar).
      */
     fun hasEmptyBuckets(): Boolean {
-        refreshState()
-        return state.emptyBucketsCount > 0
+        return InventoryManager.countEmptyBucketsInHotbar() > 0
     }
 
     /**
      * Verifie si on a besoin de remplir les seaux (plus de seaux d'eau).
+     * Optimise: utilise directement InventoryManager (cache hotbar).
      */
     fun needsRefill(): Boolean {
-        refreshState()
-        return state.waterBucketsCount == 0 && state.emptyBucketsCount > 0
+        return InventoryManager.countWaterBucketsInHotbar() == 0 &&
+               InventoryManager.countEmptyBucketsInHotbar() > 0
     }
 
     /**

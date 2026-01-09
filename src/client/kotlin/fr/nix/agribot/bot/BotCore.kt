@@ -82,12 +82,16 @@ object BotCore {
      */
     fun init() {
         ClientTickEvents.END_CLIENT_TICK.register { _ ->
+            // Invalider le cache hotbar a chaque tick
+            InventoryManager.onTick()
+
+            // Ne rien faire si le bot est desactive (optimisation)
+            if (!config.botEnabled) return@register
+
             // Verifier si on est sur l'ecran de deconnexion et le fermer automatiquement
             handleDisconnectedScreen()
 
-            if (config.botEnabled) {
-                onTick()
-            }
+            onTick()
         }
         logger.info("BotCore initialise")
     }

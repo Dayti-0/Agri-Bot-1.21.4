@@ -29,12 +29,78 @@ data class BucketStackInfo(
 
 /**
  * Gestionnaire d'inventaire pour la hotbar.
+ * Optimise avec cache pour eviter les scans repetes de la hotbar.
  */
 object InventoryManager {
     private val logger = LoggerFactory.getLogger("agribot")
 
     private val client: MinecraftClient
         get() = MinecraftClient.getInstance()
+
+    // === CACHE HOTBAR ===
+    // Le cache est invalide a chaque tick pour garantir la fraicheur des donnees
+    // tout en evitant les scans multiples dans le meme tick
+
+    private var cacheTickId: Long = -1
+    private var cachedWaterBucketSlots: List<BucketSlotInfo> = emptyList()
+    private var cachedEmptyBucketSlots: List<BucketSlotInfo> = emptyList()
+    private var cachedWaterBucketCount: Int = 0
+    private var cachedEmptyBucketCount: Int = 0
+
+    // Compteur de tick global pour invalider le cache
+    private var globalTickCounter: Long = 0
+
+    /**
+     * Doit etre appele une fois par tick pour permettre l'invalidation du cache.
+     * Appele automatiquement par BotCore.
+     */
+    fun onTick() {
+        globalTickCounter++
+    }
+
+    /**
+     * Scanne la hotbar une seule fois par tick et met en cache les resultats.
+     */
+    private fun ensureCacheValid() {
+        if (cacheTickId == globalTickCounter) return // Cache valide
+
+        // Invalider et rescanner
+        cacheTickId = globalTickCounter
+
+        val player = client.player
+        if (player == null) {
+            cachedWaterBucketSlots = emptyList()
+            cachedEmptyBucketSlots = emptyList()
+            cachedWaterBucketCount = 0
+            cachedEmptyBucketCount = 0
+            return
+        }
+
+        // Scan unique de la hotbar
+        val waterSlots = mutableListOf<BucketSlotInfo>()
+        val emptySlots = mutableListOf<BucketSlotInfo>()
+        var waterCount = 0
+        var emptyCount = 0
+
+        for (i in 0..8) {
+            val stack = player.inventory.getStack(i)
+            when (stack.item) {
+                Items.WATER_BUCKET -> {
+                    waterSlots.add(BucketSlotInfo(i, stack.count, isFull = true))
+                    waterCount += stack.count
+                }
+                Items.BUCKET -> {
+                    emptySlots.add(BucketSlotInfo(i, stack.count, isFull = false))
+                    emptyCount += stack.count
+                }
+            }
+        }
+
+        cachedWaterBucketSlots = waterSlots
+        cachedEmptyBucketSlots = emptySlots
+        cachedWaterBucketCount = waterCount
+        cachedEmptyBucketCount = emptyCount
+    }
 
     /**
      * Mapping des types de graines vers les items Minecraft.
@@ -110,57 +176,32 @@ object InventoryManager {
 
     /**
      * Trouve tous les slots contenant des seaux d'eau dans la hotbar.
+     * Optimise: utilise le cache hotbar.
      * @return Liste des slots avec seaux d'eau (tries par index)
      */
     fun findWaterBucketSlots(): List<BucketSlotInfo> {
-        val player = client.player ?: return emptyList()
-        val result = mutableListOf<BucketSlotInfo>()
-
-        for (i in 0..8) {
-            val stack = player.inventory.getStack(i)
-            if (stack.item == Items.WATER_BUCKET) {
-                result.add(BucketSlotInfo(i, stack.count, isFull = true))
-            }
-        }
-
-        return result
+        ensureCacheValid()
+        return cachedWaterBucketSlots
     }
 
     /**
      * Trouve tous les slots contenant des seaux vides dans la hotbar.
+     * Optimise: utilise le cache hotbar.
      * @return Liste des slots avec seaux vides (tries par index)
      */
     fun findEmptyBucketSlots(): List<BucketSlotInfo> {
-        val player = client.player ?: return emptyList()
-        val result = mutableListOf<BucketSlotInfo>()
-
-        for (i in 0..8) {
-            val stack = player.inventory.getStack(i)
-            if (stack.item == Items.BUCKET) {
-                result.add(BucketSlotInfo(i, stack.count, isFull = false))
-            }
-        }
-
-        return result
+        ensureCacheValid()
+        return cachedEmptyBucketSlots
     }
 
     /**
      * Trouve tous les slots contenant des seaux (pleins ou vides) dans la hotbar.
+     * Optimise: utilise le cache hotbar.
      * @return Liste des slots avec seaux (tries par index)
      */
     fun findAllBucketSlots(): List<BucketSlotInfo> {
-        val player = client.player ?: return emptyList()
-        val result = mutableListOf<BucketSlotInfo>()
-
-        for (i in 0..8) {
-            val stack = player.inventory.getStack(i)
-            when (stack.item) {
-                Items.WATER_BUCKET -> result.add(BucketSlotInfo(i, stack.count, isFull = true))
-                Items.BUCKET -> result.add(BucketSlotInfo(i, stack.count, isFull = false))
-            }
-        }
-
-        return result
+        ensureCacheValid()
+        return cachedWaterBucketSlots + cachedEmptyBucketSlots
     }
 
     /**
@@ -195,23 +236,29 @@ object InventoryManager {
 
     /**
      * Compte le nombre total de seaux d'eau dans la hotbar.
+     * Optimise: utilise le cache hotbar.
      */
     fun countWaterBucketsInHotbar(): Int {
-        return findWaterBucketSlots().sumOf { it.count }
+        ensureCacheValid()
+        return cachedWaterBucketCount
     }
 
     /**
      * Compte le nombre total de seaux vides dans la hotbar.
+     * Optimise: utilise le cache hotbar.
      */
     fun countEmptyBucketsInHotbar(): Int {
-        return findEmptyBucketSlots().sumOf { it.count }
+        ensureCacheValid()
+        return cachedEmptyBucketCount
     }
 
     /**
      * Compte le nombre total de seaux (pleins + vides) dans la hotbar.
+     * Optimise: utilise le cache hotbar.
      */
     fun countAllBucketsInHotbar(): Int {
-        return countWaterBucketsInHotbar() + countEmptyBucketsInHotbar()
+        ensureCacheValid()
+        return cachedWaterBucketCount + cachedEmptyBucketCount
     }
 
     /**

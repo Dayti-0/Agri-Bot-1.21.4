@@ -25,26 +25,35 @@ object ActionManager {
     private var useKeyHeld = false
     private var sneakKeyHeld = false
 
+    // Cache de la methode doItemUse (reflection coûteuse)
+    private val doItemUseMethod: java.lang.reflect.Method? by lazy {
+        try {
+            MinecraftClient::class.java.getDeclaredMethod("doItemUse").also {
+                it.isAccessible = true
+            }
+        } catch (e: NoSuchMethodException) {
+            logger.warn("doItemUse() non trouve - utilisation du fallback")
+            null
+        }
+    }
+
     /**
      * Simule un clic droit (utiliser/interagir) comme un humain.
      * Utilise la vraie methode doItemUse() de Minecraft via reflexion.
-     * C'est exactement ce que le jeu appelle quand un joueur fait un vrai clic.
+     * Optimise: la methode est cachee au premier appel (lazy).
      */
     fun rightClick() {
         client.execute {
-            try {
-                // Trouver et appeler doItemUse() via reflexion
-                // C'est une methode privee de MinecraftClient
-                val doItemUseMethod = MinecraftClient::class.java.getDeclaredMethod("doItemUse")
-                doItemUseMethod.isAccessible = true
-                doItemUseMethod.invoke(client)
-                logger.debug("Clic droit via doItemUse()")
-            } catch (e: NoSuchMethodException) {
-                // Fallback: essayer avec le nom obfusque ou mappings differents
-                logger.warn("doItemUse() non trouve, utilisation de l'alternative")
-                rightClickFallback()
-            } catch (e: Exception) {
-                logger.error("Erreur lors du clic droit: ${e.message}")
+            val method = doItemUseMethod
+            if (method != null) {
+                try {
+                    method.invoke(client)
+                    logger.debug("Clic droit via doItemUse()")
+                } catch (e: Exception) {
+                    logger.error("Erreur lors du clic droit: ${e.message}")
+                    rightClickFallback()
+                }
+            } else {
                 rightClickFallback()
             }
         }

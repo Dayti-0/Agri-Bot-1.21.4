@@ -1,6 +1,7 @@
 package fr.nix.agribot.chat
 
 import org.slf4j.LoggerFactory
+import java.text.Normalizer
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
@@ -9,6 +10,9 @@ import java.util.concurrent.CopyOnWriteArrayList
  */
 object ChatListener {
     private val logger = LoggerFactory.getLogger("agribot")
+
+    // Pattern pre-compile pour supprimer les accents (Normalizer + regex)
+    private val DIACRITICS_PATTERN = "\\p{InCombiningDiacriticalMarks}+".toRegex()
 
     // Messages a detecter
     const val STATION_FULL_MESSAGE = "Votre Station de Croissance est déjà pleine d'eau"
@@ -106,21 +110,13 @@ object ChatListener {
 
     /**
      * Normalise un texte pour la comparaison (minuscules, sans accents).
+     * Optimise: utilise java.text.Normalizer au lieu de 13 replace() en chaine.
      */
     private fun normalizeForComparison(text: String): String {
-        return text.lowercase()
-            .replace("é", "e")
-            .replace("è", "e")
-            .replace("ê", "e")
-            .replace("ë", "e")
-            .replace("à", "a")
-            .replace("â", "a")
-            .replace("ô", "o")
-            .replace("ù", "u")
-            .replace("û", "u")
-            .replace("î", "i")
-            .replace("ï", "i")
-            .replace("ç", "c")
+        // NFD decompose les caracteres accentues en base + diacritique
+        // Ensuite on supprime les diacritiques avec le pattern pre-compile
+        val normalized = Normalizer.normalize(text, Normalizer.Form.NFD)
+        return DIACRITICS_PATTERN.replace(normalized, "").lowercase()
     }
 
     /**
