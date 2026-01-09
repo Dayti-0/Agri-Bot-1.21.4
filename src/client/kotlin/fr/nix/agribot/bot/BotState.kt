@@ -92,7 +92,11 @@ data class BotStateData(
     /** True si l'eau est suffisante pour se reconnecter apres la pause event */
     var canReconnectAfterEvent: Boolean = true,
     /** True si la prochaine session doit forcer le remplissage complet (apres event) */
-    var forceFullWaterRefill: Boolean = false
+    var forceFullWaterRefill: Boolean = false,
+
+    // OPTIMISATION: Cache des stations actives (evite recalcul a chaque tick)
+    /** Liste des stations actives cachee au debut de la session */
+    var cachedStations: List<String> = emptyList()
 ) {
     fun reset() {
         state = BotState.IDLE
@@ -105,5 +109,6 @@ data class BotStateData(
         isEventPause = false
         canReconnectAfterEvent = true
         forceFullWaterRefill = false
+        cachedStations = emptyList()
     }
 }

@@ -82,8 +82,10 @@ object BotCore {
      */
     fun init() {
         ClientTickEvents.END_CLIENT_TICK.register { _ ->
-            // Invalider le cache hotbar a chaque tick
+            // Invalider les caches a chaque tick (OPTIMISATION)
             InventoryManager.onTick()
+            MenuDetector.onTick()
+            ChatManager.onTick()
 
             // Ne rien faire si le bot est desactive (optimisation)
             if (!config.botEnabled) return@register
@@ -166,12 +168,13 @@ object BotCore {
             return
         }
 
-        // Verifier les stations
+        // Verifier les stations et cacher la liste (OPTIMISATION)
         val stations = config.getActiveStations()
         if (stations.isEmpty()) {
             ChatManager.showActionBar("Aucune station configuree!", "c")
             return
         }
+        stateData.cachedStations = stations  // Cache pour eviter recalcul a chaque tick
 
         // Verifier periode de redemarrage serveur
         if (config.isServerRestartPeriod()) {
@@ -277,9 +280,16 @@ object BotCore {
 
     /**
      * Appele a chaque tick quand le bot est actif.
+     * Optimise: early return si en attente pour eviter verifications inutiles.
      */
     private fun onTick() {
         tickCounter++
+
+        // OPTIMISATION: Early return si en attente (evite toutes les verifications)
+        if (waitTicks > 0) {
+            waitTicks--
+            return
+        }
 
         // Verification periodique de la connexion (sauf si en pause, deconnexion ou idle)
         if (stateData.state != BotState.IDLE &&
@@ -305,12 +315,6 @@ object BotCore {
             stateData.state != BotState.DISCONNECTING &&
             stateData.state != BotState.CONNECTING) {
             handleForcedTeleportDetected()
-            return
-        }
-
-        // Attendre si necessaire
-        if (waitTicks > 0) {
-            waitTicks--
             return
         }
 
@@ -532,12 +536,15 @@ object BotCore {
 
                         if (positionBefore != null && positionAfter != null) {
                             val distance = positionBefore.distanceTo(positionAfter)
-                            logger.debug("Distance de teleportation vers coffre: %.2f blocs".format(distance))
+                            // OPTIMISATION: eviter String.format si debug desactive
+                            if (logger.isDebugEnabled) {
+                                logger.debug("Distance de teleportation vers coffre: %.2f blocs".format(distance))
+                            }
 
                             // Si la distance est superieure a 50 blocs, ajouter un delai supplementaire
                             if (distance > 50.0) {
                                 extraDelay = 2000  // 2 secondes de plus
-                                logger.info("Teleportation longue distance vers coffre (%.2f blocs) - delai supplementaire de ${extraDelay}ms".format(distance))
+                                logger.info("Teleportation longue distance vers coffre ({} blocs) - delai supplementaire de {}ms", "%.2f".format(distance), extraDelay)
                                 // Appliquer le delai supplementaire
                                 if (extraDelay > 0) {
                                     waitMs(extraDelay)
@@ -686,7 +693,8 @@ object BotCore {
     }
 
     private fun handleTeleporting() {
-        val stations = config.getActiveStations()
+        // OPTIMISATION: utiliser le cache au lieu de recalculer
+        val stations = stateData.cachedStations
         if (stateData.currentStationIndex >= stations.size) {
             // Toutes les stations sont terminees
             stateData.state = BotState.DISCONNECTING
@@ -721,13 +729,16 @@ object BotCore {
             logger.info("Premiere station de la session - delai supplementaire de ${extraDelay}ms pour chargement initial")
         } else if (positionBefore != null && positionAfter != null) {
             val distance = positionBefore.distanceTo(positionAfter)
-            logger.debug("Distance de teleportation: %.2f blocs".format(distance))
+            // OPTIMISATION: eviter String.format si debug desactive
+            if (logger.isDebugEnabled) {
+                logger.debug("Distance de teleportation: %.2f blocs".format(distance))
+            }
 
             // Si la distance est superieure a 50 blocs, ajouter un delai supplementaire
             // pour laisser le temps au monde de se charger
             if (distance > 50.0) {
                 extraDelay = 2000  // 2 secondes de plus
-                logger.info("Teleportation longue distance (%.2f blocs) - delai supplementaire de ${extraDelay}ms".format(distance))
+                logger.info("Teleportation longue distance ({} blocs) - delai supplementaire de {}ms", "%.2f".format(distance), extraDelay)
             }
         }
 
@@ -750,7 +761,8 @@ object BotCore {
 
     private fun handleOpeningStation() {
         // Ouverture de la station (non-bloquant)
-        val stations = config.getActiveStations()
+        // OPTIMISATION: utiliser le cache au lieu de recalculer
+        val stations = stateData.cachedStations
         val currentStation = if (stateData.currentStationIndex < stations.size) {
             stations[stateData.currentStationIndex]
         } else {
@@ -1211,7 +1223,8 @@ object BotCore {
 
     private fun handleError() {
         // Construire un message d'erreur detaille avec le contexte
-        val stations = config.getActiveStations()
+        // OPTIMISATION: utiliser le cache au lieu de recalculer
+        val stations = stateData.cachedStations
         val currentStation = if (stateData.currentStationIndex < stations.size) {
             stations[stateData.currentStationIndex]
         } else {

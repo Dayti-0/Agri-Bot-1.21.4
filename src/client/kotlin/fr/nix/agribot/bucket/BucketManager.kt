@@ -61,6 +61,7 @@ object BucketManager {
 
     /**
      * Met a jour l'etat des seaux depuis l'inventaire.
+     * OPTIMISE: utilise le cache d'InventoryManager et evite les logs debug.
      */
     fun refreshState() {
         state.waterBucketsCount = InventoryManager.countWaterBucketsInHotbar()
@@ -68,7 +69,10 @@ object BucketManager {
         state.totalBuckets = state.waterBucketsCount + state.emptyBucketsCount
         state.mode = getCurrentMode()
 
-        logger.debug("Etat seaux: ${state.waterBucketsCount} pleins, ${state.emptyBucketsCount} vides, mode=${state.mode}")
+        // OPTIMISATION: log seulement si debug active
+        if (logger.isDebugEnabled) {
+            logger.debug("Etat seaux: {} pleins, {} vides, mode={}", state.waterBucketsCount, state.emptyBucketsCount, state.mode)
+        }
     }
 
     /**

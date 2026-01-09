@@ -18,6 +18,36 @@ object MenuDetector {
     private val client: MinecraftClient
         get() = MinecraftClient.getInstance()
 
+    // === CACHE MENU TYPE ===
+    // Evite les instanceof checks repetes dans le meme tick
+    private var cacheTickId: Long = -1
+    private var cachedMenuType: MenuType = MenuType.NONE
+    private var cachedScreen: Screen? = null
+    private var globalTickCounter: Long = 0
+
+    /**
+     * Doit etre appele une fois par tick pour permettre l'invalidation du cache.
+     * Appele automatiquement par BotCore via InventoryManager.
+     */
+    fun onTick() {
+        globalTickCounter++
+    }
+
+    /**
+     * Invalide le cache si necessaire (nouveau tick ou ecran change).
+     */
+    private fun ensureCacheValid() {
+        val currentScreen = client.currentScreen
+        if (cacheTickId == globalTickCounter && cachedScreen === currentScreen) {
+            return // Cache valide
+        }
+
+        // Invalider et recalculer
+        cacheTickId = globalTickCounter
+        cachedScreen = currentScreen
+        cachedMenuType = detectMenuTypeInternal()
+    }
+
     /**
      * Type de menu detecte.
      */
@@ -45,8 +75,17 @@ object MenuDetector {
 
     /**
      * Detecte le type de menu actuellement ouvert.
+     * OPTIMISE: utilise le cache pour eviter les instanceof checks repetes.
      */
     fun detectMenuType(): MenuType {
+        ensureCacheValid()
+        return cachedMenuType
+    }
+
+    /**
+     * Implementation interne de la detection de type de menu.
+     */
+    private fun detectMenuTypeInternal(): MenuType {
         val screen = client.currentScreen ?: return MenuType.NONE
 
         // Verifier si c'est un HandledScreen (menu avec inventaire)
