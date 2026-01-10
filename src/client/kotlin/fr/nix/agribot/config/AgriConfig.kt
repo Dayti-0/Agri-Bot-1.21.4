@@ -64,6 +64,9 @@ data class AgriConfig(
         const val EVENT_PAUSE_SECONDS = 2 * 60 * 60 // 2 heures = 7200 secondes
         const val EVENT_PAUSE_MINUTES = 120 // 2 heures en minutes
 
+        // Seuil de fusion des sessions (si prochaine session dans moins de X minutes, faire maintenant)
+        const val SESSION_MERGE_THRESHOLD_MINUTES = 60 // 1 heure
+
         // Durees d'eau disponibles (en minutes)
         val WATER_DURATIONS = listOf(
             300,  // 5h
