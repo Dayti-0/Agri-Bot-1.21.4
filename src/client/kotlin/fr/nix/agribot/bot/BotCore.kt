@@ -36,6 +36,7 @@ object BotCore {
 
     // Sous-etats pour la gestion des seaux dans le coffre
     private var bucketManagementStep = 0
+    private var bucketsToKeepTarget = -1  // Nombre de seaux a garder (-1 = pas de limite)
 
     // Sous-etats pour la recolte
     private var harvestingStep = 0
@@ -645,14 +646,18 @@ object BotCore {
                 // Etape 3: Preparer les slots a traiter
                 when (mode) {
                     fr.nix.agribot.bucket.BucketMode.MORNING -> {
-                        val toDeposit = BucketManager.getBucketsToDeposit()
-                        if (toDeposit > 0) {
-                            logger.info("Depot de $toDeposit seaux dans le coffre")
+                        val toKeep = BucketManager.getBucketsToKeep()
+                        val currentBuckets = InventoryManager.countBucketsInPlayerInventoryInChestMenu()
+                        if (currentBuckets > toKeep) {
+                            logger.info("Depot de seaux dans le coffre (garder $toKeep sur $currentBuckets)")
+                            // Recuperer TOUS les slots de seaux (on s'arretera quand on aura le bon nombre)
                             val bucketSlots = InventoryManager.findBucketSlotsInChestMenu()
-                            bucketSlotsToProcess = bucketSlots.take(toDeposit)
+                            bucketSlotsToProcess = bucketSlots
                             bucketSlotIndex = 0
+                            bucketsToKeepTarget = toKeep
                             bucketManagementStep = 3
                         } else {
+                            logger.info("Deja le bon nombre de seaux ($currentBuckets <= $toKeep)")
                             bucketManagementStep = 4
                         }
                     }
@@ -660,19 +665,32 @@ object BotCore {
                         logger.info("Recuperation des seaux du coffre")
                         bucketSlotsToProcess = InventoryManager.findBucketSlotsInChest()
                         bucketSlotIndex = 0
+                        bucketsToKeepTarget = -1  // Pas de limite pour la recuperation
                         bucketManagementStep = 3
                     }
                 }
             }
             3 -> {
                 // Etape 3b: Traiter les slots un par un (non-bloquant)
+                // Verifier d'abord si on a deja le bon nombre de seaux (mode MORNING)
+                if (bucketsToKeepTarget > 0) {
+                    val currentBuckets = InventoryManager.countBucketsInPlayerInventoryInChestMenu()
+                    if (currentBuckets <= bucketsToKeepTarget) {
+                        logger.info("Nombre de seaux atteint: $currentBuckets (cible: $bucketsToKeepTarget)")
+                        bucketManagementStep = 4
+                        waitMs(300)
+                        return
+                    }
+                }
+
                 if (bucketSlotIndex < bucketSlotsToProcess.size) {
                     val slot = bucketSlotsToProcess[bucketSlotIndex]
                     ActionManager.shiftClickSlot(slot)
                     bucketSlotIndex++
-                    wait(2)  // 100ms entre chaque clic
+                    wait(4)  // 200ms entre chaque clic pour laisser le temps au transfert
                 } else {
-                    logger.info("${bucketSlotsToProcess.size} seaux traites")
+                    val finalCount = InventoryManager.countBucketsInPlayerInventoryInChestMenu()
+                    logger.info("Tous les slots traites - $finalCount seaux restants")
                     bucketManagementStep = 4
                     waitMs(300)
                 }

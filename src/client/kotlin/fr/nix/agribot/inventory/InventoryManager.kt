@@ -469,6 +469,54 @@ object InventoryManager {
     }
 
     /**
+     * Compte le nombre total de seaux dans l'inventaire du joueur quand le coffre est ouvert.
+     * Thread-safe: peut etre appele depuis n'importe quel thread.
+     * @return Nombre total de seaux (pleins + vides) dans l'inventaire joueur
+     */
+    fun countBucketsInPlayerInventoryInChestMenu(): Int {
+        val future = CompletableFuture<Int>()
+
+        client.execute {
+            val screen = client.currentScreen
+            if (screen !is net.minecraft.client.gui.screen.ingame.HandledScreen<*>) {
+                future.complete(0)
+                return@execute
+            }
+
+            val handler = screen.screenHandler
+            if (handler == null) {
+                future.complete(0)
+                return@execute
+            }
+
+            val chestSize = when (handler) {
+                is GenericContainerScreenHandler -> handler.rows * 9
+                else -> 27
+            }
+
+            var count = 0
+            // Parcourir les slots de l'inventaire du joueur dans le menu
+            for (i in chestSize until handler.slots.size) {
+                val slot = handler.slots[i]
+                val stack = slot.stack
+
+                if (!stack.isEmpty && (stack.item == Items.WATER_BUCKET || stack.item == Items.BUCKET)) {
+                    count += stack.count
+                }
+            }
+
+            future.complete(count)
+        }
+
+        return try {
+            future.get(5, TimeUnit.SECONDS)
+        } catch (e: Exception) {
+            logger.error("Erreur lors du comptage des seaux: ${e.message}")
+            0
+        }
+    }
+
+    /**
      * Trouve tous les slots contenant des seaux (pleins ou vides) dans le menu du coffre ouvert.
      * Retourne les slots de l'inventaire du joueur (pas ceux du coffre).
      * Thread-safe: peut etre appele depuis n'importe quel thread.
