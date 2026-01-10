@@ -37,6 +37,8 @@ object BotCore {
     // Sous-etats pour la gestion des seaux dans le coffre
     private var bucketManagementStep = 0
     private var bucketsToKeepTarget = -1  // Nombre de seaux a garder (-1 = pas de limite)
+    private var bucketsToDepositRemaining = 0  // Nombre de seaux restant a deposer (clics droits)
+    private var emptyChestSlot = -1  // Slot vide du coffre pour deposer
 
     // Sous-etats pour la recolte
     private var harvestingStep = 0
@@ -643,66 +645,106 @@ object BotCore {
                 }
             }
             2 -> {
-                // Etape 3: Preparer les slots a traiter
+                // Etape 2: Preparer le depot/recuperation selon le mode
                 when (mode) {
                     fr.nix.agribot.bucket.BucketMode.MORNING -> {
                         val toKeep = BucketManager.getBucketsToKeep()
                         val currentBuckets = InventoryManager.countBucketsInPlayerInventoryInChestMenu()
                         if (currentBuckets > toKeep) {
-                            logger.info("Depot de seaux dans le coffre (garder $toKeep sur $currentBuckets)")
-                            // Recuperer TOUS les slots de seaux (on s'arretera quand on aura le bon nombre)
+                            val toDeposit = currentBuckets - toKeep
+                            logger.info("Depot de $toDeposit seaux dans le coffre (garder $toKeep sur $currentBuckets)")
+                            // Trouver le premier slot de seaux dans l'inventaire
                             val bucketSlots = InventoryManager.findBucketSlotsInChestMenu()
-                            bucketSlotsToProcess = bucketSlots
-                            bucketSlotIndex = 0
-                            bucketsToKeepTarget = toKeep
-                            bucketManagementStep = 3
+                            if (bucketSlots.isNotEmpty()) {
+                                // Trouver un slot vide dans le coffre
+                                emptyChestSlot = InventoryManager.findEmptySlotInChest()
+                                if (emptyChestSlot >= 0) {
+                                    // Clic gauche pour prendre les seaux en main
+                                    ActionManager.leftClickSlot(bucketSlots.first())
+                                    bucketsToDepositRemaining = toDeposit
+                                    bucketManagementStep = 3
+                                    wait(4)
+                                } else {
+                                    logger.error("Pas de slot vide dans le coffre pour deposer les seaux!")
+                                    bucketManagementStep = 4
+                                }
+                            } else {
+                                logger.warn("Aucun slot de seaux trouve")
+                                bucketManagementStep = 4
+                            }
                         } else {
                             logger.info("Deja le bon nombre de seaux ($currentBuckets <= $toKeep)")
-                            bucketManagementStep = 4
+                            bucketManagementStep = 5
                         }
                     }
                     fr.nix.agribot.bucket.BucketMode.RETRIEVE, fr.nix.agribot.bucket.BucketMode.NORMAL -> {
                         logger.info("Recuperation des seaux du coffre")
                         bucketSlotsToProcess = InventoryManager.findBucketSlotsInChest()
                         bucketSlotIndex = 0
-                        bucketsToKeepTarget = -1  // Pas de limite pour la recuperation
-                        bucketManagementStep = 3
+                        bucketManagementStep = 6  // Aller a l'etape de recuperation (shift-click)
                     }
                 }
             }
             3 -> {
-                // Etape 3b: Traiter les slots un par un (non-bloquant)
-                // Verifier d'abord si on a deja le bon nombre de seaux (mode MORNING)
-                if (bucketsToKeepTarget > 0) {
-                    val currentBuckets = InventoryManager.countBucketsInPlayerInventoryInChestMenu()
-                    if (currentBuckets <= bucketsToKeepTarget) {
-                        logger.info("Nombre de seaux atteint: $currentBuckets (cible: $bucketsToKeepTarget)")
-                        bucketManagementStep = 4
-                        waitMs(300)
-                        return
+                // Etape 3: Deposer les seaux un par un avec clic droit (mode MORNING)
+                if (bucketsToDepositRemaining > 0) {
+                    // Clic droit sur un slot vide du coffre = depose 1 seau
+                    ActionManager.rightClickSlot(emptyChestSlot)
+                    bucketsToDepositRemaining--
+                    logger.debug("Seau depose, reste $bucketsToDepositRemaining a deposer")
+                    wait(2)  // 100ms entre chaque clic
+                } else {
+                    // Tous les seaux deposes, reposer le reste dans l'inventaire
+                    logger.info("Depot termine, repose du seau restant dans l'inventaire")
+                    bucketManagementStep = 4
+                    wait(2)
+                }
+            }
+            4 -> {
+                // Etape 4: Reposer le seau restant dans l'inventaire (clic gauche sur un slot de l'inventaire)
+                val bucketSlots = InventoryManager.findBucketSlotsInChestMenu()
+                if (bucketSlots.isNotEmpty()) {
+                    // Reposer sur un slot existant de seaux (pour stacker)
+                    ActionManager.leftClickSlot(bucketSlots.first())
+                } else {
+                    // Pas de slot de seaux, trouver un slot vide dans l'inventaire du joueur
+                    // Les slots de l'inventaire joueur commencent apres le coffre
+                    val handler = (client.currentScreen as? net.minecraft.client.gui.screen.ingame.HandledScreen<*>)?.screenHandler
+                    if (handler != null) {
+                        val chestSize = when (handler) {
+                            is net.minecraft.screen.GenericContainerScreenHandler -> handler.rows * 9
+                            else -> 27
+                        }
+                        // Cliquer sur le premier slot de l'inventaire joueur
+                        ActionManager.leftClickSlot(chestSize)
                     }
                 }
-
+                val finalCount = InventoryManager.countBucketsInPlayerInventoryInChestMenu()
+                logger.info("Depot termine - $finalCount seaux restants dans l'inventaire")
+                bucketManagementStep = 5
+                waitMs(300)
+            }
+            5 -> {
+                // Etape 5: Fermer le coffre
+                ActionManager.closeScreen()
+                bucketManagementStep = 7
+                waitMs(500)
+            }
+            6 -> {
+                // Etape 6: Recuperation des seaux du coffre (shift-click)
                 if (bucketSlotIndex < bucketSlotsToProcess.size) {
                     val slot = bucketSlotsToProcess[bucketSlotIndex]
                     ActionManager.shiftClickSlot(slot)
                     bucketSlotIndex++
-                    wait(4)  // 200ms entre chaque clic pour laisser le temps au transfert
+                    wait(4)  // 200ms entre chaque clic
                 } else {
-                    val finalCount = InventoryManager.countBucketsInPlayerInventoryInChestMenu()
-                    logger.info("Tous les slots traites - $finalCount seaux restants")
-                    bucketManagementStep = 4
+                    logger.info("${bucketSlotsToProcess.size} slots de seaux recuperes du coffre")
+                    bucketManagementStep = 5  // Aller a l'etape de fermeture
                     waitMs(300)
                 }
             }
-            4 -> {
-                // Etape 4: Fermer le coffre
-                ActionManager.closeScreen()
-                bucketManagementStep = 5
-                waitMs(500)
-            }
-            5 -> {
-                // Etape 5: Sauvegarder le mode ET la periode (transition complete)
+            7 -> {
+                // Etape 7: Sauvegarder le mode ET la periode (transition complete)
                 BucketManager.saveTransitionComplete()
                 logger.info("Gestion seaux terminee")
                 stateData.state = BotState.TELEPORTING
