@@ -1233,8 +1233,6 @@ object BotCore {
         logger.info("Remplissages restants avant recolte: ${stateData.waterRefillsRemaining}")
         logger.info("========================================")
 
-        ChatManager.showActionBar("Session terminee! ${stateData.stationsCompleted} stations", "a")
-
         // Calculer la pause en fonction des remplissages restants
         var pauseSeconds = config.getNextPauseSeconds(stateData.waterRefillsRemaining, stateData.cycleStartTime)
         val nextSessionType = if (stateData.waterRefillsRemaining > 0) "remplissage eau" else "recolte/plantation"
@@ -1246,6 +1244,46 @@ object BotCore {
             pauseSeconds += extraDelaySeconds
             logger.info("Ajout de 5 minutes de delai de securite avant session plante")
         }
+
+        // OPTIMISATION: Si la prochaine session de remplissage est dans moins de 60 minutes,
+        // la faire maintenant au lieu de se deconnecter et se reconnecter
+        val mergeThresholdSeconds = AgriConfig.SESSION_MERGE_THRESHOLD_MINUTES * 60
+        if (stateData.waterRefillsRemaining > 0 && pauseSeconds < mergeThresholdSeconds) {
+            logger.info("========================================")
+            logger.info("FUSION DE SESSION: Prochaine session ($nextSessionType) dans ${pauseSeconds / 60} min < ${AgriConfig.SESSION_MERGE_THRESHOLD_MINUTES} min")
+            logger.info("Remplissage eau maintenant au lieu de se reconnecter")
+            logger.info("========================================")
+
+            ChatManager.showActionBar("Fusion: remplissage eau maintenant (${pauseSeconds / 60}min < seuil)", "a")
+
+            // Configurer pour une session de remplissage d'eau
+            stateData.apply {
+                isWaterOnlySession = true
+                waterRefillsRemaining--  // Decrementer car on va faire ce remplissage
+                currentStationIndex = 0
+                isFirstStationOfSession = true
+                needsWaterRefill = true
+                stationsCompleted = 0
+                sessionStartTime = System.currentTimeMillis()  // Reset pour la nouvelle session
+            }
+
+            // Reinitialiser le delai adaptatif pour la nouvelle session
+            BucketManager.resetAdaptiveDelay()
+
+            // Verifier si on doit gerer les seaux (transition matin/apres-midi)
+            if (BucketManager.needsModeTransition()) {
+                bucketManagementStep = 0
+                stateData.state = BotState.MANAGING_BUCKETS
+            } else {
+                BucketManager.saveCurrentMode()
+                stateData.state = BotState.TELEPORTING
+            }
+
+            logger.info("Session de remplissage fusionnee demarree - ${stateData.waterRefillsRemaining} remplissages restants apres")
+            return
+        }
+
+        ChatManager.showActionBar("Session terminee! ${stateData.stationsCompleted} stations", "a")
 
         logger.info("Pause de ${pauseSeconds / 60} minutes avant prochaine session ($nextSessionType)")
         logger.info("Deconnexion du serveur...")
