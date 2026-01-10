@@ -23,7 +23,6 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
     private lateinit var plantRightButton: ButtonWidget
     private lateinit var boostField: TextFieldWidget
     private lateinit var waterDurationButton: ButtonWidget
-    private lateinit var startupDelayButton: ButtonWidget
 
     private var scrollOffset = 0
     private var visibleStations = 8  // Nombre de stations visibles a l'ecran (calculé dynamiquement)
@@ -33,7 +32,6 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
     private var selectedWaterDurationIndex = 0
     private var selectedPlantIndex = 0
     private val plantNames = Plants.getNames()
-    private var startupDelayMinutes = 0
 
     override fun init() {
         super.init()
@@ -99,28 +97,8 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
         }.dimensions(centerX + 30, waterY, 70, 20).build()
         addDrawableChild(waterDurationButton)
 
-        // === Section Minuteur de demarrage ===
-        val timerY = waterY + 28
-
-        // Charger le delai actuel
-        startupDelayMinutes = config.startupDelayMinutes
-
-        // Bouton pour ajouter 10 min au minuteur
-        startupDelayButton = ButtonWidget.builder(Text.literal(AgriConfig.formatStartupDelay(startupDelayMinutes))) { _ ->
-            // Ajouter 10 minutes
-            startupDelayMinutes += 10
-            startupDelayButton.message = Text.literal(AgriConfig.formatStartupDelay(startupDelayMinutes))
-        }.dimensions(centerX + 30, timerY, 50, 20).build()
-        addDrawableChild(startupDelayButton)
-
-        // Bouton pour remettre le minuteur a 0
-        addDrawableChild(ButtonWidget.builder(Text.literal("0")) { _ ->
-            startupDelayMinutes = 0
-            startupDelayButton.message = Text.literal(AgriConfig.formatStartupDelay(startupDelayMinutes))
-        }.dimensions(centerX + 85, timerY, 20, 20).build())
-
         // === Section Stations (scrollable) ===
-        stationsStartY = timerY + 35
+        stationsStartY = waterY + 35
         stationFields.clear()
 
         // Calculer le nombre de stations visibles en fonction de l'espace disponible
@@ -246,9 +224,6 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
         // Label section Duree eau
         context.drawTextWithShadow(textRenderer, "Duree eau stations:", centerX - 100, 126, 0xAAAAAA)
 
-        // Label section Minuteur
-        context.drawTextWithShadow(textRenderer, "Minuteur demarrage:", centerX - 100, 154, 0xAAAAAA)
-
         // Titre section Stations
         val stationsTitleY = stationsStartY - 10
         context.drawTextWithShadow(textRenderer, "Stations", centerX - 100, stationsTitleY, 0xFFFF55)
@@ -292,9 +267,6 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
 
         // Sauvegarder la duree d'eau
         config.waterDurationMinutes = AgriConfig.WATER_DURATIONS[selectedWaterDurationIndex]
-
-        // Sauvegarder le minuteur de demarrage
-        config.startupDelayMinutes = startupDelayMinutes
 
         // Sauvegarder les stations
         for (i in 0 until 30) {
