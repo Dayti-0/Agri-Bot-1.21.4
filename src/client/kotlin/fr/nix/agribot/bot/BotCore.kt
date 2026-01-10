@@ -39,6 +39,7 @@ object BotCore {
     private var bucketsToKeepTarget = -1  // Nombre de seaux a garder (-1 = pas de limite)
     private var bucketsToDepositRemaining = 0  // Nombre de seaux restant a deposer (clics droits)
     private var emptyChestSlot = -1  // Slot vide du coffre pour deposer
+    private var originalBucketSlot = -1  // Slot original des seaux (pour les remettre au meme endroit)
 
     // Sous-etats pour la recolte
     private var harvestingStep = 0
@@ -659,8 +660,11 @@ object BotCore {
                                 // Trouver un slot vide dans le coffre
                                 emptyChestSlot = InventoryManager.findEmptySlotInChest()
                                 if (emptyChestSlot >= 0) {
+                                    // Sauvegarder le slot original pour remettre le seau au meme endroit
+                                    originalBucketSlot = bucketSlots.first()
+                                    logger.info("Slot original des seaux: $originalBucketSlot")
                                     // Clic gauche pour prendre les seaux en main
-                                    ActionManager.leftClickSlot(bucketSlots.first())
+                                    ActionManager.leftClickSlot(originalBucketSlot)
                                     bucketsToDepositRemaining = toDeposit
                                     bucketManagementStep = 3
                                     wait(4)
@@ -701,26 +705,35 @@ object BotCore {
                 }
             }
             4 -> {
-                // Etape 4: Reposer le seau restant dans l'inventaire (clic gauche sur un slot de l'inventaire)
-                val bucketSlots = InventoryManager.findBucketSlotsInChestMenu()
-                if (bucketSlots.isNotEmpty()) {
-                    // Reposer sur un slot existant de seaux (pour stacker)
-                    ActionManager.leftClickSlot(bucketSlots.first())
+                // Etape 4: Reposer le seau restant dans le slot ORIGINAL (comme dans TestActions)
+                if (originalBucketSlot >= 0) {
+                    logger.info("Remise du seau restant dans le slot original ($originalBucketSlot)")
+                    ActionManager.leftClickSlot(originalBucketSlot)
                 } else {
-                    // Pas de slot de seaux, trouver un slot vide dans l'inventaire du joueur
-                    // Les slots de l'inventaire joueur commencent apres le coffre
-                    val handler = (client.currentScreen as? net.minecraft.client.gui.screen.ingame.HandledScreen<*>)?.screenHandler
-                    if (handler != null) {
-                        val chestSize = when (handler) {
-                            is net.minecraft.screen.GenericContainerScreenHandler -> handler.rows * 9
-                            else -> 27
+                    // Fallback: chercher un slot de seaux existant ou utiliser la hotbar
+                    val bucketSlots = InventoryManager.findBucketSlotsInChestMenu()
+                    if (bucketSlots.isNotEmpty()) {
+                        logger.info("Remise du seau sur slot existant (${bucketSlots.first()})")
+                        ActionManager.leftClickSlot(bucketSlots.first())
+                    } else {
+                        // Pas de slot de seaux, utiliser le premier slot de la hotbar
+                        // Dans un menu coffre: hotbar = chestSize + 27 a chestSize + 35
+                        val handler = (client.currentScreen as? net.minecraft.client.gui.screen.ingame.HandledScreen<*>)?.screenHandler
+                        if (handler != null) {
+                            val chestSize = when (handler) {
+                                is net.minecraft.screen.GenericContainerScreenHandler -> handler.rows * 9
+                                else -> 27
+                            }
+                            // Premier slot de la hotbar = chestSize + 27
+                            val hotbarSlot = chestSize + 27
+                            logger.info("Remise du seau dans la hotbar (slot $hotbarSlot)")
+                            ActionManager.leftClickSlot(hotbarSlot)
                         }
-                        // Cliquer sur le premier slot de l'inventaire joueur
-                        ActionManager.leftClickSlot(chestSize)
                     }
                 }
                 val finalCount = InventoryManager.countBucketsInPlayerInventoryInChestMenu()
                 logger.info("Depot termine - $finalCount seaux restants dans l'inventaire")
+                originalBucketSlot = -1  // Reset pour la prochaine utilisation
                 bucketManagementStep = 5
                 waitMs(300)
             }
