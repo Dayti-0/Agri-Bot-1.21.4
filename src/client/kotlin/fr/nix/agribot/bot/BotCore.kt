@@ -1236,8 +1236,16 @@ object BotCore {
         ChatManager.showActionBar("Session terminee! ${stateData.stationsCompleted} stations", "a")
 
         // Calculer la pause en fonction des remplissages restants
-        val pauseSeconds = config.getNextPauseSeconds(stateData.waterRefillsRemaining, stateData.cycleStartTime)
+        var pauseSeconds = config.getNextPauseSeconds(stateData.waterRefillsRemaining, stateData.cycleStartTime)
         val nextSessionType = if (stateData.waterRefillsRemaining > 0) "remplissage eau" else "recolte/plantation"
+
+        // Ajouter 5 minutes de delai avant une session plante pour etre sur que les plantes sont bien finies
+        // (pas de delai pour les sessions de remplissage d'eau uniquement)
+        if (stateData.waterRefillsRemaining == 0) {
+            val extraDelaySeconds = 5 * 60  // 5 minutes
+            pauseSeconds += extraDelaySeconds
+            logger.info("Ajout de 5 minutes de delai de securite avant session plante")
+        }
 
         logger.info("Pause de ${pauseSeconds / 60} minutes avant prochaine session ($nextSessionType)")
         logger.info("Deconnexion du serveur...")
