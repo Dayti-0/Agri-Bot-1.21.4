@@ -9,6 +9,9 @@ enum class BotState {
     /** Bot desactive */
     IDLE,
 
+    /** Attente du minuteur avant demarrage */
+    WAITING_STARTUP,
+
     /** Connexion automatique au serveur de jeu en cours */
     CONNECTING,
 
@@ -86,6 +89,9 @@ data class BotStateData(
     /** Timestamp de fin de la pause (pour affichage du temps restant) */
     var pauseEndTime: Long = 0,
 
+    /** Timestamp de fin du delai de demarrage (pour affichage du temps restant) */
+    var startupEndTime: Long = 0,
+
     // Gestion des events (teleportation forcee)
     /** True si la pause actuelle est due a un event (teleportation forcee) */
     var isEventPause: Boolean = false,
@@ -110,5 +116,6 @@ data class BotStateData(
         canReconnectAfterEvent = true
         forceFullWaterRefill = false
         cachedStations = emptyList()
+        startupEndTime = 0
     }
 }

@@ -25,6 +25,7 @@ object AgriBotClient : ClientModInitializer {
     private var lastBotEnabled: Boolean = false
     private var lastBotState: BotState? = null
     private var lastPauseEndTime: Long = 0
+    private var lastStartupEndTime: Long = 0
 
     override fun onInitializeClient() {
         logger.info("==================================================")
@@ -88,18 +89,21 @@ object AgriBotClient : ClientModInitializer {
         val currentBotEnabled = config.botEnabled
         val currentBotState = BotCore.stateData.state
         val currentPauseEndTime = BotCore.stateData.pauseEndTime
+        val currentStartupEndTime = BotCore.stateData.startupEndTime
 
         val needsUpdate = cachedTimerText == null ||
                           currentTime - lastTimerUpdateTime >= 1000 ||
                           currentBotEnabled != lastBotEnabled ||
                           currentBotState != lastBotState ||
-                          (currentBotState == BotState.PAUSED && currentPauseEndTime != lastPauseEndTime)
+                          (currentBotState == BotState.PAUSED && currentPauseEndTime != lastPauseEndTime) ||
+                          (currentBotState == BotState.WAITING_STARTUP && currentStartupEndTime != lastStartupEndTime)
 
         if (needsUpdate) {
             lastTimerUpdateTime = currentTime
             lastBotEnabled = currentBotEnabled
             lastBotState = currentBotState
             lastPauseEndTime = currentPauseEndTime
+            lastStartupEndTime = currentStartupEndTime
 
             // Recalculer le texte et la couleur
             updateTimerCache(currentTime)
@@ -137,6 +141,25 @@ object AgriBotClient : ClientModInitializer {
             }
         } else {
             when (BotCore.stateData.state) {
+                BotState.WAITING_STARTUP -> {
+                    val remainingMs = BotCore.stateData.startupEndTime - currentTime
+                    if (remainingMs > 0) {
+                        val totalSeconds = remainingMs / 1000
+                        val hours = totalSeconds / 3600
+                        val minutes = (totalSeconds % 3600) / 60
+                        val seconds = totalSeconds % 60
+
+                        cachedTimerText = when {
+                            hours > 0 -> "Demarrage dans: ${hours}h ${minutes.toString().padStart(2, '0')}m ${seconds.toString().padStart(2, '0')}s"
+                            minutes > 0 -> "Demarrage dans: ${minutes}m ${seconds.toString().padStart(2, '0')}s"
+                            else -> "Demarrage dans: ${seconds}s"
+                        }
+                        cachedTimerColor = 0xFFFF55  // Jaune
+                    } else {
+                        cachedTimerText = "Demarrage..."
+                        cachedTimerColor = 0x55FF55
+                    }
+                }
                 BotState.PAUSED -> {
                     val remainingMs = BotCore.stateData.pauseEndTime - currentTime
                     if (remainingMs > 0) {
