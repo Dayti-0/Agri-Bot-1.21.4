@@ -128,6 +128,7 @@ object BotCore {
 
     /**
      * Demarre une nouvelle session de farming.
+     * Si un delai de demarrage est configure, attend d'abord ce delai.
      * Si le mot de passe est configure, lance d'abord la connexion automatique.
      */
     fun startSession() {
@@ -139,6 +140,20 @@ object BotCore {
         // Verifier la connexion au serveur Minecraft
         if (!ChatManager.isConnected()) {
             ChatManager.showActionBar("Pas connecte au serveur!", "c")
+            return
+        }
+
+        // Verifier si un delai de demarrage est configure
+        if (config.startupDelayMinutes > 0) {
+            val delaySeconds = config.startupDelayMinutes * 60
+            stateData.startupEndTime = System.currentTimeMillis() + (delaySeconds * 1000L)
+            stateData.state = BotState.WAITING_STARTUP
+            logger.info("Minuteur de demarrage: ${AgriConfig.formatStartupDelay(config.startupDelayMinutes)} avant le demarrage")
+            ChatManager.showActionBar("Demarrage dans ${AgriConfig.formatStartupDelay(config.startupDelayMinutes)}", "6")
+            // Remettre le delai a 0 pour les prochaines sessions
+            config.startupDelayMinutes = 0
+            config.save()
+            waitMs(delaySeconds * 1000)
             return
         }
 
@@ -325,6 +340,7 @@ object BotCore {
         // Machine d'etat
         when (stateData.state) {
             BotState.IDLE -> { /* Rien */ }
+            BotState.WAITING_STARTUP -> handleWaitingStartup()
             BotState.CONNECTING -> handleConnecting()
             BotState.MANAGING_BUCKETS -> handleManagingBuckets()
             BotState.TELEPORTING -> handleTeleporting()
@@ -394,6 +410,37 @@ object BotCore {
     }
 
     // ==================== HANDLERS ====================
+
+    /**
+     * Gere l'attente du minuteur avant le demarrage.
+     * Quand le minuteur expire, lance la session normalement.
+     */
+    private fun handleWaitingStartup() {
+        // Le minuteur a expire, lancer la session normalement
+        logger.info("Minuteur de demarrage termine - lancement de la session")
+        ChatManager.showActionBar("Minuteur termine - demarrage!", "a")
+        stateData.startupEndTime = 0
+
+        // Si mot de passe configure, lancer la connexion automatique
+        if (config.loginPassword.isNotBlank()) {
+            logger.info("Mot de passe configure - demarrage connexion automatique")
+            ServerConnector.reset()
+            connectionRetryCount = 0
+            connectionRetryDelayTicks = 0
+            if (ServerConnector.startConnection()) {
+                stateData.state = BotState.CONNECTING
+                return
+            } else {
+                logger.warn("Erreur demarrage connexion: ${ServerConnector.errorMessage}")
+                stateData.errorMessage = "Erreur demarrage connexion: ${ServerConnector.errorMessage}"
+                stateData.state = BotState.ERROR
+                return
+            }
+        }
+
+        // Pas de mot de passe, demarrer directement la session
+        startFarmingSession()
+    }
 
     /**
      * Gere la detection d'une teleportation forcee (event actif).

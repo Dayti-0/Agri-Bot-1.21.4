@@ -31,6 +31,10 @@ data class AgriConfig(
     //                    500 (8h20), 540 (9h), 580 (9h40), 620 (10h20), 660 (11h), 720 (12h)
     var waterDurationMinutes: Int = 720,  // 12h par defaut
 
+    // Delai avant le demarrage du bot (en minutes)
+    // 0 = demarrage immediat, sinon le bot attend ce delai avant de commencer
+    var startupDelayMinutes: Int = 0,
+
     // Parametres des seaux
     var lastBucketMode: String? = null, // "drop", "retrieve", ou "normal"
     var lastTransitionPeriod: String? = null, // Periode de la derniere transition (ex: "2024-01-15-matin")
@@ -89,6 +93,21 @@ data class AgriConfig(
             val hours = minutes / 60
             val mins = minutes % 60
             return if (mins > 0) "${hours}h${mins}" else "${hours}h"
+        }
+
+        /**
+         * Formate un delai de demarrage en texte lisible.
+         * Ex: 0 -> "0", 10 -> "10", 60 -> "1h", 70 -> "1h10", 130 -> "2h10"
+         */
+        fun formatStartupDelay(minutes: Int): String {
+            if (minutes == 0) return "0"
+            val hours = minutes / 60
+            val mins = minutes % 60
+            return when {
+                hours == 0 -> "$mins"
+                mins == 0 -> "${hours}h"
+                else -> "${hours}h${mins}"
+            }
         }
 
         private fun getConfigFile(): File {

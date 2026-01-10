@@ -12,6 +12,7 @@ import net.minecraft.client.network.ServerAddress;
 import net.minecraft.client.network.ServerInfo;
 import net.minecraft.text.Text;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -22,21 +23,49 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(MultiplayerScreen.class)
 public abstract class MultiplayerScreenMixin extends Screen {
 
+    @Unique
+    private ButtonWidget timerButton;
+
     protected MultiplayerScreenMixin(Text title) {
         super(title);
     }
 
     @Inject(method = "init", at = @At("TAIL"))
     private void addAgriBotButton(CallbackInfo ci) {
-        // Ajouter le bouton AgriBot en haut a droite
-        int buttonWidth = 100;
+        AgriConfig config = AgriBotClient.INSTANCE.getConfig();
+
+        // Bouton AgriBot en haut a droite
+        int agriBotButtonWidth = 100;
         int buttonHeight = 20;
-        int x = this.width - buttonWidth - 10;
+        int agriBotX = this.width - agriBotButtonWidth - 10;
         int y = 10;
 
         this.addDrawableChild(ButtonWidget.builder(Text.literal("AgriBot"), button -> {
             connectAndStartBot();
-        }).dimensions(x, y, buttonWidth, buttonHeight).build());
+        }).dimensions(agriBotX, y, agriBotButtonWidth, buttonHeight).build());
+
+        // Bouton minuteur a gauche du bouton AgriBot
+        int timerButtonWidth = 50;
+        int timerX = agriBotX - timerButtonWidth - 5;
+
+        timerButton = ButtonWidget.builder(Text.literal(AgriConfig.Companion.formatStartupDelay(config.getStartupDelayMinutes())), button -> {
+            // Ajouter 10 minutes
+            int currentDelay = config.getStartupDelayMinutes();
+            config.setStartupDelayMinutes(currentDelay + 10);
+            config.save();
+            timerButton.setMessage(Text.literal(AgriConfig.Companion.formatStartupDelay(config.getStartupDelayMinutes())));
+        }).dimensions(timerX, y, timerButtonWidth, buttonHeight).build();
+        this.addDrawableChild(timerButton);
+
+        // Bouton reset (0) a gauche du bouton minuteur
+        int resetButtonWidth = 20;
+        int resetX = timerX - resetButtonWidth - 5;
+
+        this.addDrawableChild(ButtonWidget.builder(Text.literal("0"), button -> {
+            config.setStartupDelayMinutes(0);
+            config.save();
+            timerButton.setMessage(Text.literal(AgriConfig.Companion.formatStartupDelay(0)));
+        }).dimensions(resetX, y, resetButtonWidth, buttonHeight).build());
     }
 
     private void connectAndStartBot() {
