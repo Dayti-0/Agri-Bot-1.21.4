@@ -823,6 +823,110 @@ object InventoryManager {
     }
 
     /**
+     * Trouve un slot dans l'inventaire du joueur pour y deposer des seaux.
+     * Priorite: 1) Slot avec seaux existants dans la hotbar (pour empiler)
+     *           2) Slot avec seaux existants dans l'inventaire principal
+     *           3) Slot vide dans la hotbar
+     *           4) Slot vide dans l'inventaire principal
+     * Thread-safe: peut etre appele depuis n'importe quel thread.
+     * @return Index du slot dans le menu, ou -1 si aucun trouve
+     */
+    fun findBucketSlotWithSpaceInPlayerInventory(): Int {
+        val future = CompletableFuture<Int>()
+
+        client.execute {
+            val screen = client.currentScreen
+            if (screen !is net.minecraft.client.gui.screen.ingame.HandledScreen<*>) {
+                future.complete(-1)
+                return@execute
+            }
+
+            val handler = screen.screenHandler
+            if (handler == null) {
+                future.complete(-1)
+                return@execute
+            }
+
+            val chestSize = when (handler) {
+                is GenericContainerScreenHandler -> handler.rows * 9
+                else -> 27
+            }
+
+            // Slots de l'inventaire du joueur dans le menu coffre:
+            // - Inventaire principal: chestSize to chestSize+26
+            // - Hotbar: chestSize+27 to chestSize+35
+            val hotbarStart = chestSize + 27
+            val hotbarEnd = chestSize + 35
+            val inventoryStart = chestSize
+            val inventoryEnd = chestSize + 26
+
+            // 1) Chercher un slot avec seaux dans la HOTBAR (pour empiler)
+            for (i in hotbarStart..hotbarEnd) {
+                if (i < handler.slots.size) {
+                    val slot = handler.slots[i]
+                    val stack = slot.stack
+                    if (!stack.isEmpty &&
+                        (stack.item == Items.WATER_BUCKET || stack.item == Items.BUCKET) &&
+                        stack.count < 16) {
+                        logger.debug("Slot avec seaux (${stack.count}/16) trouve dans hotbar: $i")
+                        future.complete(i)
+                        return@execute
+                    }
+                }
+            }
+
+            // 2) Chercher un slot avec seaux dans l'inventaire principal (pour empiler)
+            for (i in inventoryStart..inventoryEnd) {
+                if (i < handler.slots.size) {
+                    val slot = handler.slots[i]
+                    val stack = slot.stack
+                    if (!stack.isEmpty &&
+                        (stack.item == Items.WATER_BUCKET || stack.item == Items.BUCKET) &&
+                        stack.count < 16) {
+                        logger.debug("Slot avec seaux (${stack.count}/16) trouve dans inventaire: $i")
+                        future.complete(i)
+                        return@execute
+                    }
+                }
+            }
+
+            // 3) Chercher un slot vide dans la HOTBAR
+            for (i in hotbarStart..hotbarEnd) {
+                if (i < handler.slots.size) {
+                    val slot = handler.slots[i]
+                    if (slot.stack.isEmpty) {
+                        logger.debug("Slot vide trouve dans hotbar: $i")
+                        future.complete(i)
+                        return@execute
+                    }
+                }
+            }
+
+            // 4) Chercher un slot vide dans l'inventaire principal
+            for (i in inventoryStart..inventoryEnd) {
+                if (i < handler.slots.size) {
+                    val slot = handler.slots[i]
+                    if (slot.stack.isEmpty) {
+                        logger.debug("Slot vide trouve dans inventaire: $i")
+                        future.complete(i)
+                        return@execute
+                    }
+                }
+            }
+
+            logger.warn("Aucun slot disponible pour deposer les seaux")
+            future.complete(-1)
+        }
+
+        return try {
+            future.get(5, TimeUnit.SECONDS)
+        } catch (e: Exception) {
+            logger.error("Erreur lors de la recherche d'un slot pour seaux: ${e.message}")
+            -1
+        }
+    }
+
+    /**
      * Verifie si le joueur a une carte dans l'inventaire.
      * Une carte presente apres /login indique un captcha.
      * @return true si une carte est presente
