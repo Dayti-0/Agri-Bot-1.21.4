@@ -48,6 +48,9 @@ enum class BotState {
     /** Vidage des seaux restants en fin de session */
     EMPTYING_REMAINING_BUCKETS,
 
+    /** Recuperation de seaux depuis le coffre de backup (apres crash) */
+    RECOVERING_BUCKETS,
+
     /** Fin de session, deconnexion */
     DISCONNECTING,
 

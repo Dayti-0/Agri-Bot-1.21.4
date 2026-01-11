@@ -81,6 +81,11 @@ object BotCore {
     private const val MAX_CONNECTION_RETRIES = 3
     private const val CONNECTION_RETRY_DELAY_TICKS = 100  // 5 secondes
 
+    // Sous-etats pour la recuperation de seaux depuis le coffre de backup
+    private var bucketRecoveryStep = 0
+    private var bucketsToRecover = 0
+    private var bucketsRecovered = 0
+
     /**
      * Initialise le bot et enregistre le tick handler.
      */
@@ -325,6 +330,32 @@ object BotCore {
         // Log l'etat des seaux
         BucketManager.logState()
 
+        // Verifier si des seaux manquent et si le home backup est configure
+        val currentBucketCount = BucketManager.state.totalBuckets
+        val targetBuckets = config.targetBucketCount
+        val missingBuckets = targetBuckets - currentBucketCount
+
+        if (missingBuckets > 0 && config.homeBackup.isNotBlank()) {
+            logger.warn("========================================")
+            logger.warn("SEAUX MANQUANTS DETECTES APRES CRASH")
+            logger.warn("Seaux actuels: $currentBucketCount")
+            logger.warn("Seaux cibles: $targetBuckets")
+            logger.warn("Seaux manquants: $missingBuckets")
+            logger.warn("Recuperation depuis: ${config.homeBackup}")
+            logger.warn("========================================")
+
+            ChatManager.showActionBar("$missingBuckets seaux manquants - Recuperation...", "e")
+
+            // Configurer la recuperation de seaux
+            bucketRecoveryStep = 0
+            bucketsToRecover = missingBuckets
+            bucketsRecovered = 0
+            stateData.state = BotState.RECOVERING_BUCKETS
+            return
+        } else if (missingBuckets > 0) {
+            logger.warn("Seaux manquants ($missingBuckets) mais home backup non configure - on continue quand meme")
+        }
+
         // Reset des detections de chat
         ChatListener.resetAllDetections()
 
@@ -410,6 +441,7 @@ object BotCore {
             BotState.REFILLING_BUCKETS -> handleRefillingBuckets()
             BotState.NEXT_STATION -> handleNextStation()
             BotState.EMPTYING_REMAINING_BUCKETS -> handleEmptyingRemainingBuckets()
+            BotState.RECOVERING_BUCKETS -> handleRecoveringBuckets()
             BotState.DISCONNECTING -> handleDisconnecting()
             BotState.PAUSED -> handlePaused()
             BotState.ERROR -> handleError()
@@ -1380,6 +1412,146 @@ object BotCore {
             // Plus de seaux d'eau, on peut terminer
             logger.info("Tous les seaux ont ete vides")
             stateData.state = BotState.DISCONNECTING
+        }
+    }
+
+    /**
+     * Gere la recuperation de seaux depuis le coffre de backup.
+     * Utilise apres un crash si des seaux ont disparu.
+     * Recupere les seaux un par un (pas de shift-click car ca prendrait le stack entier).
+     */
+    private fun handleRecoveringBuckets() {
+        when (bucketRecoveryStep) {
+            0 -> {
+                // Etape 0: Se teleporter vers le home backup
+                logger.info("========================================")
+                logger.info("RECUPERATION DE SEAUX DEPUIS BACKUP")
+                logger.info("Home backup: ${config.homeBackup}")
+                logger.info("Seaux a recuperer: $bucketsToRecover")
+                logger.info("========================================")
+
+                ChatManager.showActionBar("Recuperation seaux backup ($bucketsToRecover manquants)", "6")
+                ChatManager.teleportToHome(config.homeBackup)
+                bucketRecoveryStep = 1
+                waitMs(config.delayAfterTeleport + 1000)  // Delai supplementaire pour chargement
+            }
+            1 -> {
+                // Etape 1: Ouvrir le coffre (clic droit)
+                if (MenuDetector.isChestOrContainerOpen()) {
+                    logger.info("Coffre backup deja ouvert")
+                    bucketRecoveryStep = 2
+                    waitMs(500)
+                    return
+                }
+
+                logger.info("Ouverture coffre backup")
+                ActionManager.rightClick()
+                menuOpenStep = 1
+                menuOpenRetries = 0
+                bucketRecoveryStep = 2
+                wait(2)
+            }
+            2 -> {
+                // Etape 2: Attendre que le coffre soit ouvert
+                if (MenuDetector.isChestOrContainerOpen()) {
+                    logger.info("Coffre backup ouvert - stabilisation")
+                    bucketRecoveryStep = 3
+                    wait(MENU_STABILIZATION_TICKS)
+                } else {
+                    menuOpenRetries++
+                    if (menuOpenRetries >= MAX_MENU_OPEN_RETRIES) {
+                        logger.error("Echec ouverture coffre backup - Timeout")
+                        stateData.errorMessage = "Impossible d'ouvrir le coffre backup '${config.homeBackup}'"
+                        stateData.state = BotState.ERROR
+                        bucketRecoveryStep = 0
+                        return
+                    }
+                    wait(2)
+                }
+            }
+            3 -> {
+                // Etape 3: Chercher les seaux dans le coffre et les recuperer un par un
+                if (!MenuDetector.isChestOrContainerOpen()) {
+                    logger.warn("Coffre backup ferme pendant recuperation - reouverture")
+                    bucketRecoveryStep = 1
+                    waitMs(500)
+                    return
+                }
+
+                if (bucketsRecovered >= bucketsToRecover) {
+                    // Tous les seaux recuperes
+                    logger.info("Recuperation terminee: $bucketsRecovered seaux recuperes")
+                    ActionManager.closeScreen()
+                    bucketRecoveryStep = 0
+                    bucketsRecovered = 0
+                    bucketsToRecover = 0
+
+                    // Continuer vers TELEPORTING pour reprendre la session
+                    stateData.state = BotState.TELEPORTING
+                    waitMs(500)
+                    return
+                }
+
+                // Chercher un slot avec des seaux dans le coffre
+                val bucketSlot = InventoryManager.findFirstBucketSlotInChest()
+                if (bucketSlot < 0) {
+                    logger.warn("Plus de seaux dans le coffre backup! Recuperes: $bucketsRecovered/$bucketsToRecover")
+                    ActionManager.closeScreen()
+                    bucketRecoveryStep = 0
+
+                    // Continuer quand meme avec ce qu'on a
+                    stateData.state = BotState.TELEPORTING
+                    waitMs(500)
+                    return
+                }
+
+                // Recuperer UN seau (clic gauche pour prendre, puis clic gauche dans inventaire pour deposer)
+                // Etape 3a: Prendre le stack en main
+                logger.debug("Recuperation seau ${bucketsRecovered + 1}/$bucketsToRecover depuis slot $bucketSlot")
+                ActionManager.leftClickSlot(bucketSlot)
+                bucketRecoveryStep = 4
+                wait(4)
+            }
+            4 -> {
+                // Etape 4: Deposer UN seau dans l'inventaire (clic droit = deposer 1)
+                // Trouver un slot vide dans l'inventaire du joueur
+                val emptySlot = InventoryManager.findEmptySlotInPlayerInventory()
+                if (emptySlot >= 0) {
+                    ActionManager.rightClickSlot(emptySlot)
+                    bucketsRecovered++
+                    logger.info("Seau $bucketsRecovered/$bucketsToRecover recupere")
+                    bucketRecoveryStep = 5
+                    wait(4)
+                } else {
+                    // Pas de slot vide, remettre le seau et continuer
+                    logger.warn("Inventaire plein - impossible de recuperer plus de seaux")
+                    // Remettre le seau dans le coffre
+                    val bucketSlot = InventoryManager.findFirstBucketSlotInChest()
+                    if (bucketSlot >= 0) {
+                        ActionManager.leftClickSlot(bucketSlot)
+                    }
+                    ActionManager.closeScreen()
+                    bucketRecoveryStep = 0
+                    stateData.state = BotState.TELEPORTING
+                    waitMs(500)
+                }
+            }
+            5 -> {
+                // Etape 5: Remettre le reste du stack dans le coffre
+                val bucketSlot = InventoryManager.findFirstBucketSlotInChest()
+                if (bucketSlot >= 0) {
+                    // Remettre le reste dans le meme slot
+                    ActionManager.leftClickSlot(bucketSlot)
+                } else {
+                    // Trouver un slot vide dans le coffre pour y mettre le reste
+                    val emptyChestSlot = InventoryManager.findEmptySlotInChest()
+                    if (emptyChestSlot >= 0) {
+                        ActionManager.leftClickSlot(emptyChestSlot)
+                    }
+                }
+                bucketRecoveryStep = 3  // Continuer la recuperation
+                wait(4)
+            }
         }
     }
 

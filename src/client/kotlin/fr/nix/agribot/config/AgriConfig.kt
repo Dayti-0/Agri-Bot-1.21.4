@@ -26,6 +26,13 @@ data class AgriConfig(
     // Home pour le coffre de seaux (depot/recuperation)
     var homeCoffre: String = "coffre",
 
+    // Home pour le coffre de backup (seaux de secours apres crash)
+    // Si vide, la recuperation de seaux de backup est desactivee
+    var homeBackup: String = "",
+
+    // Nombre de seaux cible (nombre de seaux a avoir en inventaire)
+    var targetBucketCount: Int = 16,
+
     // Duree de l'eau dans les stations (en minutes)
     // Valeurs possibles: 300 (5h), 340 (5h40), 380 (6h20), 420 (7h), 460 (7h40),
     //                    500 (8h20), 540 (9h), 580 (9h40), 620 (10h20), 660 (11h), 720 (12h)
