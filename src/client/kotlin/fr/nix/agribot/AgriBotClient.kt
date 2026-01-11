@@ -4,7 +4,9 @@ import fr.nix.agribot.bot.AutoStartManager
 import fr.nix.agribot.bot.BotCore
 import fr.nix.agribot.bot.BotState
 import fr.nix.agribot.bot.PreConnectionTimer
+import fr.nix.agribot.chat.AutoResponseManager
 import fr.nix.agribot.config.AgriConfig
+import fr.nix.agribot.config.AutoResponseConfig
 import fr.nix.agribot.config.Plants
 import fr.nix.agribot.input.KeyBindings
 import net.fabricmc.api.ClientModInitializer
@@ -48,6 +50,10 @@ object AgriBotClient : ClientModInitializer {
 
         // Initialiser le timer de pre-connexion
         PreConnectionTimer.init()
+
+        // Initialiser le gestionnaire de reponses automatiques
+        AutoResponseConfig.load()
+        AutoResponseManager.init()
 
         // Enregistrer le rendu du timer de session sur l'ecran multijoueur
         registerSessionTimerRenderer()

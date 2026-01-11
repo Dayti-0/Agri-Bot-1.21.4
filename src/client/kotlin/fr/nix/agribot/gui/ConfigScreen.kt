@@ -1,7 +1,9 @@
 package fr.nix.agribot.gui
 
 import fr.nix.agribot.AgriBotClient
+import fr.nix.agribot.chat.AutoResponseManager
 import fr.nix.agribot.config.AgriConfig
+import fr.nix.agribot.config.AutoResponseConfig
 import fr.nix.agribot.config.Plants
 import fr.nix.agribot.test.TestActions
 import net.minecraft.client.gui.DrawContext
@@ -165,6 +167,19 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
             close()
             TestActions.testPlanter()
         }.dimensions(testButtonX, 69, testButtonWidth, 16).build())
+
+        // === Bouton Auto-Reponse (en haut a gauche) ===
+        val autoResponseConfig = AutoResponseConfig.get()
+        val autoResponseStatus = if (autoResponseConfig.enabled) "ON" else "OFF"
+        val testModeStatus = if (autoResponseConfig.testModeActive) " [TEST]" else ""
+        addDrawableChild(ButtonWidget.builder(Text.literal("Auto-Reponse $autoResponseStatus$testModeStatus")) { _ ->
+            client?.setScreen(AutoResponseScreen(this))
+        }.dimensions(10, 15, 130, 20).build())
+
+        // Bouton pour activer/desactiver rapidement le mode test
+        addDrawableChild(ButtonWidget.builder(Text.literal("Test AR")) { _ ->
+            AutoResponseManager.toggleTestMode()
+        }.dimensions(10, 38, 60, 16).build())
     }
 
     private fun updateVisibleFields() {
@@ -196,6 +211,9 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
 
         // Label section Tests (en haut a droite)
         context.drawTextWithShadow(textRenderer, "Tests:", width - 110, 5, 0xFF5555)
+
+        // Label section Auto-Reponse (en haut a gauche)
+        context.drawTextWithShadow(textRenderer, "Chat:", 10, 5, 0x55FF55)
 
         // Labels section Plante
         context.drawTextWithShadow(textRenderer, "Plante:", centerX - 150, 40, 0xAAAAAA)
