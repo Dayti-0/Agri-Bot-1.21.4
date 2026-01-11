@@ -727,6 +727,102 @@ object InventoryManager {
     }
 
     /**
+     * Trouve le premier slot contenant des seaux dans le coffre.
+     * Thread-safe: peut etre appele depuis n'importe quel thread.
+     * @return Index du premier slot avec des seaux, ou -1 si aucun trouve
+     */
+    fun findFirstBucketSlotInChest(): Int {
+        val future = CompletableFuture<Int>()
+
+        client.execute {
+            val screen = client.currentScreen
+            if (screen !is net.minecraft.client.gui.screen.ingame.HandledScreen<*>) {
+                future.complete(-1)
+                return@execute
+            }
+
+            val handler = screen.screenHandler
+            if (handler == null) {
+                future.complete(-1)
+                return@execute
+            }
+
+            val chestSize = when (handler) {
+                is GenericContainerScreenHandler -> handler.rows * 9
+                else -> 27
+            }
+
+            // Parcourir les slots du coffre uniquement
+            for (i in 0 until chestSize) {
+                val slot = handler.slots[i]
+                val stack = slot.stack
+
+                if (!stack.isEmpty && (stack.item == Items.WATER_BUCKET || stack.item == Items.BUCKET)) {
+                    logger.debug("Premier seau trouve dans le coffre slot $i")
+                    future.complete(i)
+                    return@execute
+                }
+            }
+
+            future.complete(-1)
+        }
+
+        return try {
+            future.get(5, TimeUnit.SECONDS)
+        } catch (e: Exception) {
+            logger.error("Erreur lors de la recherche du premier seau: ${e.message}")
+            -1
+        }
+    }
+
+    /**
+     * Trouve un slot vide dans l'inventaire du joueur quand un coffre est ouvert.
+     * Thread-safe: peut etre appele depuis n'importe quel thread.
+     * @return Index du slot vide dans le menu, ou -1 si aucun trouve
+     */
+    fun findEmptySlotInPlayerInventory(): Int {
+        val future = CompletableFuture<Int>()
+
+        client.execute {
+            val screen = client.currentScreen
+            if (screen !is net.minecraft.client.gui.screen.ingame.HandledScreen<*>) {
+                future.complete(-1)
+                return@execute
+            }
+
+            val handler = screen.screenHandler
+            if (handler == null) {
+                future.complete(-1)
+                return@execute
+            }
+
+            val chestSize = when (handler) {
+                is GenericContainerScreenHandler -> handler.rows * 9
+                else -> 27
+            }
+
+            // Parcourir les slots de l'inventaire du joueur dans le menu
+            for (i in chestSize until handler.slots.size) {
+                val slot = handler.slots[i]
+                if (slot.stack.isEmpty) {
+                    logger.debug("Slot vide trouve dans l'inventaire joueur: $i")
+                    future.complete(i)
+                    return@execute
+                }
+            }
+
+            future.complete(-1)
+        }
+
+        return try {
+            future.get(5, TimeUnit.SECONDS)
+        } catch (e: Exception) {
+            logger.error("Erreur lors de la recherche d'un slot vide: ${e.message}")
+            -1
+        }
+    }
+
+    /**
      * Verifie si le joueur a une carte dans l'inventaire.
      * Une carte presente apres /login indique un captcha.
      * @return true si une carte est presente

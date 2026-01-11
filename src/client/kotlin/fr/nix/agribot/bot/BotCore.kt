@@ -81,6 +81,11 @@ object BotCore {
     private const val MAX_CONNECTION_RETRIES = 3
     private const val CONNECTION_RETRY_DELAY_TICKS = 100  // 5 secondes
 
+    // Sous-etats pour la recuperation de seaux depuis le coffre de backup
+    private var bucketRecoveryStep = 0
+    private var bucketsToRecover = 0
+    private var bucketsRecovered = 0
+
     /**
      * Initialise le bot et enregistre le tick handler.
      */
@@ -287,6 +292,92 @@ object BotCore {
     }
 
     /**
+     * Reprend la session de farming apres une deconnexion inattendue (crash).
+     * Contrairement a startFarmingSession(), cette fonction ne reinitialise PAS currentStationIndex.
+     * Elle reprend a la station ou le bot s'est arrete.
+     */
+    private fun resumeFarmingSession() {
+        // Verifier la connexion
+        if (!ChatManager.isConnected()) {
+            ChatManager.showActionBar("Pas connecte au serveur!", "c")
+            stateData.errorMessage = "Pas connecte au serveur apres reconnexion"
+            stateData.state = BotState.ERROR
+            return
+        }
+
+        val stations = stateData.cachedStations
+        val currentStation = if (stateData.currentStationIndex < stations.size) {
+            stations[stateData.currentStationIndex]
+        } else {
+            "N/A"
+        }
+
+        logger.info("========================================")
+        logger.info("REPRISE DE SESSION APRES CRASH")
+        logger.info("Station de reprise: $currentStation (${stateData.currentStationIndex + 1}/${stateData.totalStations})")
+        logger.info("Stations deja completees: ${stateData.stationsCompleted}")
+        logger.info("Session eau uniquement: ${stateData.isWaterOnlySession}")
+        logger.info("Plante: ${config.selectedPlant}")
+        logger.info("========================================")
+
+        // Reset des flags de crash
+        stateData.isCrashReconnectPause = false
+        stateData.stateBeforeCrash = null
+
+        // Reinitialiser le delai adaptatif
+        BucketManager.resetAdaptiveDelay()
+
+        // Log l'etat des seaux
+        BucketManager.logState()
+
+        // Verifier si des seaux manquent et si le home backup est configure
+        val currentBucketCount = BucketManager.state.totalBuckets
+        val targetBuckets = config.targetBucketCount
+        val missingBuckets = targetBuckets - currentBucketCount
+
+        if (missingBuckets > 0 && config.homeBackup.isNotBlank()) {
+            logger.warn("========================================")
+            logger.warn("SEAUX MANQUANTS DETECTES APRES CRASH")
+            logger.warn("Seaux actuels: $currentBucketCount")
+            logger.warn("Seaux cibles: $targetBuckets")
+            logger.warn("Seaux manquants: $missingBuckets")
+            logger.warn("Recuperation depuis: ${config.homeBackup}")
+            logger.warn("========================================")
+
+            ChatManager.showActionBar("$missingBuckets seaux manquants - Recuperation...", "e")
+
+            // Configurer la recuperation de seaux
+            bucketRecoveryStep = 0
+            bucketsToRecover = missingBuckets
+            bucketsRecovered = 0
+            stateData.state = BotState.RECOVERING_BUCKETS
+            return
+        } else if (missingBuckets > 0) {
+            logger.warn("Seaux manquants ($missingBuckets) mais home backup non configure - on continue quand meme")
+        }
+
+        // Reset des detections de chat
+        ChatListener.resetAllDetections()
+
+        // Reinitialiser l'etat de la premiere station (pour les delais de chargement)
+        stateData.isFirstStationOfSession = true
+        stateData.sessionStartTime = System.currentTimeMillis()
+
+        val sessionType = if (stateData.isWaterOnlySession) "Reprise remplissage" else "Reprise farming"
+        val stationsRestantes = stateData.totalStations - stateData.currentStationIndex
+        ChatManager.showActionBar("$sessionType - $stationsRestantes stations restantes", "a")
+
+        // Verifier si on doit gerer les seaux (transition matin/apres-midi)
+        if (BucketManager.needsModeTransition()) {
+            bucketManagementStep = 0
+            stateData.state = BotState.MANAGING_BUCKETS
+        } else {
+            BucketManager.saveCurrentMode()
+            stateData.state = BotState.TELEPORTING
+        }
+    }
+
+    /**
      * Arrete le bot.
      */
     fun stop() {
@@ -318,9 +409,7 @@ object BotCore {
             if (!periodicConnectionCheck()) {
                 // Deconnexion detectee - gerer selon l'etat actuel
                 if (stateData.state != BotState.CONNECTING) {
-                    logger.error("Deconnexion inattendue detectee en etat ${stateData.state}")
-                    stateData.errorMessage = "Connexion perdue (etat: ${stateData.state})"
-                    stateData.state = BotState.ERROR
+                    handleUnexpectedDisconnection()
                     return
                 }
             }
@@ -352,6 +441,7 @@ object BotCore {
             BotState.REFILLING_BUCKETS -> handleRefillingBuckets()
             BotState.NEXT_STATION -> handleNextStation()
             BotState.EMPTYING_REMAINING_BUCKETS -> handleEmptyingRemainingBuckets()
+            BotState.RECOVERING_BUCKETS -> handleRecoveringBuckets()
             BotState.DISCONNECTING -> handleDisconnecting()
             BotState.PAUSED -> handlePaused()
             BotState.ERROR -> handleError()
@@ -500,6 +590,54 @@ object BotCore {
         waitMs(AgriConfig.EVENT_PAUSE_SECONDS * 1000)
     }
 
+    /**
+     * Gere une deconnexion inattendue (crash, connection reset, etc.).
+     * Au lieu d'arreter le bot, il attend 2 minutes puis se reconnecte et reprend la session.
+     */
+    private fun handleUnexpectedDisconnection() {
+        val currentState = stateData.state
+        val stations = stateData.cachedStations
+        val currentStation = if (stateData.currentStationIndex < stations.size) {
+            stations[stateData.currentStationIndex]
+        } else {
+            "N/A"
+        }
+
+        logger.warn("========================================")
+        logger.warn("DECONNEXION INATTENDUE DETECTEE")
+        logger.warn("Etat au moment du crash: $currentState")
+        logger.warn("Station: $currentStation (${stateData.currentStationIndex + 1}/${stateData.totalStations})")
+        logger.warn("Stations completees: ${stateData.stationsCompleted}")
+        logger.warn("Le bot va attendre 2 minutes puis se reconnecter")
+        logger.warn("========================================")
+
+        // Fermer tout menu ouvert et relacher les touches
+        ActionManager.closeScreen()
+        ActionManager.releaseAllKeys()
+
+        // Afficher le message a l'utilisateur
+        ChatManager.showActionBar("Deconnexion! Reconnexion dans 2 min...", "e")
+
+        // Preparer la reconnexion
+        ServerConnector.disconnectAndPrepareReconnect()
+
+        // Configurer la pause de reconnexion apres crash
+        stateData.apply {
+            isCrashReconnectPause = true
+            stateBeforeCrash = currentState
+            pauseEndTime = System.currentTimeMillis() + (AgriConfig.CRASH_RECONNECT_DELAY_SECONDS * 1000L)
+            // On garde currentStationIndex et les autres donnees de session pour reprendre
+            isFirstStationOfSession = true  // Reinitialiser car on va recharger le monde
+        }
+
+        logger.info("Pause de ${AgriConfig.CRASH_RECONNECT_DELAY_SECONDS / 60} minutes avant reconnexion")
+        logger.info("Reprise a la station: $currentStation (${stateData.currentStationIndex + 1}/${stateData.totalStations})")
+
+        // Passer en pause
+        stateData.state = BotState.PAUSED
+        waitMs(AgriConfig.CRASH_RECONNECT_DELAY_SECONDS * 1000)
+    }
+
     private fun handleConnecting() {
         // Si on est en attente de retry, decrementer le delai
         if (connectionRetryDelayTicks > 0) {
@@ -530,9 +668,16 @@ object BotCore {
         // Verifier si la connexion est terminee
         if (ServerConnector.isFinished()) {
             if (ServerConnector.isConnected()) {
-                logger.info("Connexion automatique reussie - demarrage session farming")
                 connectionRetryCount = 0  // Reset pour la prochaine fois
-                startFarmingSession()
+
+                // Verifier si on doit reprendre une session apres un crash
+                if (stateData.isCrashReconnectPause) {
+                    logger.info("Connexion reussie - REPRISE de la session apres crash")
+                    resumeFarmingSession()
+                } else {
+                    logger.info("Connexion automatique reussie - demarrage session farming")
+                    startFarmingSession()
+                }
             } else {
                 // Erreur de connexion - verifier si on peut retenter
                 val errorContext = "Connexion serveur '${config.serverAddress}' echouee: ${ServerConnector.errorMessage}"
@@ -1270,6 +1415,146 @@ object BotCore {
         }
     }
 
+    /**
+     * Gere la recuperation de seaux depuis le coffre de backup.
+     * Utilise apres un crash si des seaux ont disparu.
+     * Recupere les seaux un par un (pas de shift-click car ca prendrait le stack entier).
+     */
+    private fun handleRecoveringBuckets() {
+        when (bucketRecoveryStep) {
+            0 -> {
+                // Etape 0: Se teleporter vers le home backup
+                logger.info("========================================")
+                logger.info("RECUPERATION DE SEAUX DEPUIS BACKUP")
+                logger.info("Home backup: ${config.homeBackup}")
+                logger.info("Seaux a recuperer: $bucketsToRecover")
+                logger.info("========================================")
+
+                ChatManager.showActionBar("Recuperation seaux backup ($bucketsToRecover manquants)", "6")
+                ChatManager.teleportToHome(config.homeBackup)
+                bucketRecoveryStep = 1
+                waitMs(config.delayAfterTeleport + 1000)  // Delai supplementaire pour chargement
+            }
+            1 -> {
+                // Etape 1: Ouvrir le coffre (clic droit)
+                if (MenuDetector.isChestOrContainerOpen()) {
+                    logger.info("Coffre backup deja ouvert")
+                    bucketRecoveryStep = 2
+                    waitMs(500)
+                    return
+                }
+
+                logger.info("Ouverture coffre backup")
+                ActionManager.rightClick()
+                menuOpenStep = 1
+                menuOpenRetries = 0
+                bucketRecoveryStep = 2
+                wait(2)
+            }
+            2 -> {
+                // Etape 2: Attendre que le coffre soit ouvert
+                if (MenuDetector.isChestOrContainerOpen()) {
+                    logger.info("Coffre backup ouvert - stabilisation")
+                    bucketRecoveryStep = 3
+                    wait(MENU_STABILIZATION_TICKS)
+                } else {
+                    menuOpenRetries++
+                    if (menuOpenRetries >= MAX_MENU_OPEN_RETRIES) {
+                        logger.error("Echec ouverture coffre backup - Timeout")
+                        stateData.errorMessage = "Impossible d'ouvrir le coffre backup '${config.homeBackup}'"
+                        stateData.state = BotState.ERROR
+                        bucketRecoveryStep = 0
+                        return
+                    }
+                    wait(2)
+                }
+            }
+            3 -> {
+                // Etape 3: Chercher les seaux dans le coffre et les recuperer un par un
+                if (!MenuDetector.isChestOrContainerOpen()) {
+                    logger.warn("Coffre backup ferme pendant recuperation - reouverture")
+                    bucketRecoveryStep = 1
+                    waitMs(500)
+                    return
+                }
+
+                if (bucketsRecovered >= bucketsToRecover) {
+                    // Tous les seaux recuperes
+                    logger.info("Recuperation terminee: $bucketsRecovered seaux recuperes")
+                    ActionManager.closeScreen()
+                    bucketRecoveryStep = 0
+                    bucketsRecovered = 0
+                    bucketsToRecover = 0
+
+                    // Continuer vers TELEPORTING pour reprendre la session
+                    stateData.state = BotState.TELEPORTING
+                    waitMs(500)
+                    return
+                }
+
+                // Chercher un slot avec des seaux dans le coffre
+                val bucketSlot = InventoryManager.findFirstBucketSlotInChest()
+                if (bucketSlot < 0) {
+                    logger.warn("Plus de seaux dans le coffre backup! Recuperes: $bucketsRecovered/$bucketsToRecover")
+                    ActionManager.closeScreen()
+                    bucketRecoveryStep = 0
+
+                    // Continuer quand meme avec ce qu'on a
+                    stateData.state = BotState.TELEPORTING
+                    waitMs(500)
+                    return
+                }
+
+                // Recuperer UN seau (clic gauche pour prendre, puis clic gauche dans inventaire pour deposer)
+                // Etape 3a: Prendre le stack en main
+                logger.debug("Recuperation seau ${bucketsRecovered + 1}/$bucketsToRecover depuis slot $bucketSlot")
+                ActionManager.leftClickSlot(bucketSlot)
+                bucketRecoveryStep = 4
+                wait(4)
+            }
+            4 -> {
+                // Etape 4: Deposer UN seau dans l'inventaire (clic droit = deposer 1)
+                // Trouver un slot vide dans l'inventaire du joueur
+                val emptySlot = InventoryManager.findEmptySlotInPlayerInventory()
+                if (emptySlot >= 0) {
+                    ActionManager.rightClickSlot(emptySlot)
+                    bucketsRecovered++
+                    logger.info("Seau $bucketsRecovered/$bucketsToRecover recupere")
+                    bucketRecoveryStep = 5
+                    wait(4)
+                } else {
+                    // Pas de slot vide, remettre le seau et continuer
+                    logger.warn("Inventaire plein - impossible de recuperer plus de seaux")
+                    // Remettre le seau dans le coffre
+                    val bucketSlot = InventoryManager.findFirstBucketSlotInChest()
+                    if (bucketSlot >= 0) {
+                        ActionManager.leftClickSlot(bucketSlot)
+                    }
+                    ActionManager.closeScreen()
+                    bucketRecoveryStep = 0
+                    stateData.state = BotState.TELEPORTING
+                    waitMs(500)
+                }
+            }
+            5 -> {
+                // Etape 5: Remettre le reste du stack dans le coffre
+                val bucketSlot = InventoryManager.findFirstBucketSlotInChest()
+                if (bucketSlot >= 0) {
+                    // Remettre le reste dans le meme slot
+                    ActionManager.leftClickSlot(bucketSlot)
+                } else {
+                    // Trouver un slot vide dans le coffre pour y mettre le reste
+                    val emptyChestSlot = InventoryManager.findEmptySlotInChest()
+                    if (emptyChestSlot >= 0) {
+                        ActionManager.leftClickSlot(emptyChestSlot)
+                    }
+                }
+                bucketRecoveryStep = 3  // Continuer la recuperation
+                wait(4)
+            }
+        }
+    }
+
     private fun handleDisconnecting() {
         val duration = (System.currentTimeMillis() - stateData.sessionStartTime) / 1000 / 60
         val sessionType = if (stateData.isWaterOnlySession) "remplissage eau" else "farming"
@@ -1347,8 +1632,25 @@ object BotCore {
     }
 
     private fun handlePaused() {
-        // Fin de pause, verifier si c'est une pause event
-        if (stateData.isEventPause) {
+        // Fin de pause, verifier le type de pause
+        if (stateData.isCrashReconnectPause) {
+            // Pause due a une deconnexion inattendue (crash)
+            val stations = stateData.cachedStations
+            val currentStation = if (stateData.currentStationIndex < stations.size) {
+                stations[stateData.currentStationIndex]
+            } else {
+                "N/A"
+            }
+
+            logger.info("========================================")
+            logger.info("FIN DE PAUSE CRASH - RECONNEXION")
+            logger.info("Etat avant crash: ${stateData.stateBeforeCrash}")
+            logger.info("Reprise a la station: $currentStation (${stateData.currentStationIndex + 1}/${stateData.totalStations})")
+            logger.info("========================================")
+
+            ChatManager.showActionBar("Fin pause - Reconnexion et reprise...", "a")
+            // Note: isCrashReconnectPause est reset dans handleConnecting() apres la reprise de session
+        } else if (stateData.isEventPause) {
             // Pause due a un event (teleportation forcee)
             if (!stateData.canReconnectAfterEvent) {
                 // Eau insuffisante - on se reconnecte quand meme mais on avertit

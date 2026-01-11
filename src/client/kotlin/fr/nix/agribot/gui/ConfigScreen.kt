@@ -20,6 +20,7 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
 
     private val stationFields = mutableListOf<TextFieldWidget>()
     private lateinit var coffreField: TextFieldWidget
+    private lateinit var backupField: TextFieldWidget
     private lateinit var passwordField: TextFieldWidget
     private lateinit var plantLeftButton: ButtonWidget
     private lateinit var plantRightButton: ButtonWidget
@@ -69,10 +70,16 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
         val coffreY = startY + 30
 
         // Home coffre pour depot/recuperation des seaux
-        coffreField = TextFieldWidget(textRenderer, centerX - 100, coffreY, 200, 20, Text.literal("Coffre"))
+        coffreField = TextFieldWidget(textRenderer, centerX - 100, coffreY, 95, 20, Text.literal("Coffre"))
         coffreField.text = config.homeCoffre
         coffreField.setMaxLength(30)
         addDrawableChild(coffreField)
+
+        // Home backup pour recuperation de seaux apres crash
+        backupField = TextFieldWidget(textRenderer, centerX + 5, coffreY, 95, 20, Text.literal("Backup"))
+        backupField.text = config.homeBackup
+        backupField.setMaxLength(30)
+        addDrawableChild(backupField)
 
         // === Section Mot de passe ===
         val passwordY = coffreY + 28
@@ -234,7 +241,8 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
         }
 
         // Label section Coffre
-        context.drawTextWithShadow(textRenderer, "Home Coffre (seaux):", centerX - 100, 70, 0xAAAAAA)
+        context.drawTextWithShadow(textRenderer, "Coffre:", centerX - 100, 70, 0xAAAAAA)
+        context.drawTextWithShadow(textRenderer, "Backup:", centerX + 5, 70, 0xAAAAAA)
 
         // Label section Mot de passe
         context.drawTextWithShadow(textRenderer, "Mot de passe /login:", centerX - 100, 98, 0xAAAAAA)
@@ -277,8 +285,9 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
         config.selectedPlant = plantNames[selectedPlantIndex]
         config.growthBoost = boostField.text.toFloatOrNull() ?: 29f
 
-        // Sauvegarder le coffre
+        // Sauvegarder le coffre et le backup
         config.homeCoffre = coffreField.text
+        config.homeBackup = backupField.text
 
         // Sauvegarder le mot de passe
         config.loginPassword = passwordField.text
