@@ -823,13 +823,12 @@ object InventoryManager {
     }
 
     /**
-     * Trouve un slot dans l'inventaire du joueur pour y deposer des seaux.
+     * Trouve un slot dans la HOTBAR pour y deposer des seaux.
+     * Les seaux doivent toujours etre dans la hotbar pour etre comptes par le bot.
      * Priorite: 1) Slot avec seaux existants dans la hotbar (pour empiler)
-     *           2) Slot avec seaux existants dans l'inventaire principal
-     *           3) Slot vide dans la hotbar
-     *           4) Slot vide dans l'inventaire principal
+     *           2) Slot vide dans la hotbar
      * Thread-safe: peut etre appele depuis n'importe quel thread.
-     * @return Index du slot dans le menu, ou -1 si aucun trouve
+     * @return Index du slot dans le menu, ou -1 si hotbar pleine
      */
     fun findBucketSlotWithSpaceInPlayerInventory(): Int {
         val future = CompletableFuture<Int>()
@@ -852,13 +851,9 @@ object InventoryManager {
                 else -> 27
             }
 
-            // Slots de l'inventaire du joueur dans le menu coffre:
-            // - Inventaire principal: chestSize to chestSize+26
-            // - Hotbar: chestSize+27 to chestSize+35
+            // Hotbar dans le menu coffre: chestSize+27 to chestSize+35
             val hotbarStart = chestSize + 27
             val hotbarEnd = chestSize + 35
-            val inventoryStart = chestSize
-            val inventoryEnd = chestSize + 26
 
             // 1) Chercher un slot avec seaux dans la HOTBAR (pour empiler)
             for (i in hotbarStart..hotbarEnd) {
@@ -875,22 +870,7 @@ object InventoryManager {
                 }
             }
 
-            // 2) Chercher un slot avec seaux dans l'inventaire principal (pour empiler)
-            for (i in inventoryStart..inventoryEnd) {
-                if (i < handler.slots.size) {
-                    val slot = handler.slots[i]
-                    val stack = slot.stack
-                    if (!stack.isEmpty &&
-                        (stack.item == Items.WATER_BUCKET || stack.item == Items.BUCKET) &&
-                        stack.count < 16) {
-                        logger.debug("Slot avec seaux (${stack.count}/16) trouve dans inventaire: $i")
-                        future.complete(i)
-                        return@execute
-                    }
-                }
-            }
-
-            // 3) Chercher un slot vide dans la HOTBAR
+            // 2) Chercher un slot vide dans la HOTBAR
             for (i in hotbarStart..hotbarEnd) {
                 if (i < handler.slots.size) {
                     val slot = handler.slots[i]
@@ -902,19 +882,7 @@ object InventoryManager {
                 }
             }
 
-            // 4) Chercher un slot vide dans l'inventaire principal
-            for (i in inventoryStart..inventoryEnd) {
-                if (i < handler.slots.size) {
-                    val slot = handler.slots[i]
-                    if (slot.stack.isEmpty) {
-                        logger.debug("Slot vide trouve dans inventaire: $i")
-                        future.complete(i)
-                        return@execute
-                    }
-                }
-            }
-
-            logger.warn("Aucun slot disponible pour deposer les seaux")
+            logger.warn("Hotbar pleine - impossible de deposer les seaux")
             future.complete(-1)
         }
 
