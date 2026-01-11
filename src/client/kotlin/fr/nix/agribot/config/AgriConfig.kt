@@ -367,15 +367,34 @@ data class AgriConfig(
     }
 
     /**
-     * Verifie si on est dans la periode de redemarrage serveur (5h50-6h30).
+     * Verifie si on est dans la periode de redemarrage serveur (5h40-6h40).
      */
     fun isServerRestartPeriod(): Boolean {
         val hour = java.time.LocalTime.now().hour
         val minute = java.time.LocalTime.now().minute
         val timeInMinutes = hour * 60 + minute
 
-        // 5h50 = 350 min, 6h30 = 390 min
-        return timeInMinutes in 350..390
+        // 5h40 = 340 min, 6h40 = 400 min
+        return timeInMinutes in 340..400
+    }
+
+    /**
+     * Calcule le temps en millisecondes jusqu'a la fin de la periode de redemarrage (6h30).
+     * @return Temps en ms jusqu'a 6h30, ou 0 si on est deja apres 6h30
+     */
+    fun getTimeUntilRestartEnd(): Long {
+        val now = java.time.LocalDateTime.now()
+        val today = now.toLocalDate()
+
+        // Fin de la periode de redemarrage = 6h30
+        val restartEnd = java.time.LocalDateTime.of(today, java.time.LocalTime.of(6, 30))
+
+        // Si on est avant 6h30 aujourd'hui
+        return if (now.isBefore(restartEnd)) {
+            java.time.Duration.between(now, restartEnd).toMillis()
+        } else {
+            0L
+        }
     }
 
     /**
