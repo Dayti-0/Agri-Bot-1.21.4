@@ -2,6 +2,7 @@ package fr.nix.agribot.bot
 
 import fr.nix.agribot.AgriBotClient
 import fr.nix.agribot.action.ActionManager
+import fr.nix.agribot.chat.AutoResponseManager
 import fr.nix.agribot.chat.ChatManager
 import fr.nix.agribot.config.AgriConfig
 import fr.nix.agribot.inventory.InventoryManager
@@ -223,6 +224,8 @@ object ServerConnector {
             // On considere qu'on est connecte si pas de boussole et pas de captcha
             state = ConnectionState.CONNECTED
             ChatManager.showActionBar("Connexion reussie!", "a")
+            // Activer la fenetre de detection auto-reponse
+            AutoResponseManager.onGameServerConnected()
         }
     }
 
@@ -326,6 +329,8 @@ object ServerConnector {
                 state = ConnectionState.CONNECTED
                 menuJustClosed = false
                 ChatManager.showActionBar("Connecte au serveur de jeu!", "a")
+                // Activer la fenetre de detection auto-reponse
+                AutoResponseManager.onGameServerConnected()
             }
         } else if (waitCounter >= 400) { // Timeout 20 secondes si menu reste ouvert
             logger.warn("Timeout connexion au serveur de jeu")
@@ -334,6 +339,8 @@ object ServerConnector {
             state = ConnectionState.CONNECTED
             menuJustClosed = false
             ChatManager.showActionBar("Connexion terminee", "a")
+            // Activer la fenetre de detection auto-reponse
+            AutoResponseManager.onGameServerConnected()
         }
     }
 

@@ -89,6 +89,13 @@ object ChatListener {
                 logger.debug("Teleportation home ignoree: $message")
             }
 
+            // Traiter le message pour l'auto-reponse
+            try {
+                AutoResponseManager.processMessage(message)
+            } catch (e: Exception) {
+                logger.error("Erreur dans AutoResponseManager: ${e.message}")
+            }
+
             // Appeler les callbacks de maniere isolee (un echec ne bloque pas les autres)
             callbacks.forEach { callback ->
                 try {
