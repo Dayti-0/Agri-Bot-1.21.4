@@ -823,6 +823,78 @@ object InventoryManager {
     }
 
     /**
+     * Trouve un slot dans la HOTBAR pour y deposer des seaux.
+     * Les seaux doivent toujours etre dans la hotbar pour etre comptes par le bot.
+     * Priorite: 1) Slot avec seaux existants dans la hotbar (pour empiler)
+     *           2) Slot vide dans la hotbar
+     * Thread-safe: peut etre appele depuis n'importe quel thread.
+     * @return Index du slot dans le menu, ou -1 si hotbar pleine
+     */
+    fun findBucketSlotWithSpaceInPlayerInventory(): Int {
+        val future = CompletableFuture<Int>()
+
+        client.execute {
+            val screen = client.currentScreen
+            if (screen !is net.minecraft.client.gui.screen.ingame.HandledScreen<*>) {
+                future.complete(-1)
+                return@execute
+            }
+
+            val handler = screen.screenHandler
+            if (handler == null) {
+                future.complete(-1)
+                return@execute
+            }
+
+            val chestSize = when (handler) {
+                is GenericContainerScreenHandler -> handler.rows * 9
+                else -> 27
+            }
+
+            // Hotbar dans le menu coffre: chestSize+27 to chestSize+35
+            val hotbarStart = chestSize + 27
+            val hotbarEnd = chestSize + 35
+
+            // 1) Chercher un slot avec seaux dans la HOTBAR (pour empiler)
+            for (i in hotbarStart..hotbarEnd) {
+                if (i < handler.slots.size) {
+                    val slot = handler.slots[i]
+                    val stack = slot.stack
+                    if (!stack.isEmpty &&
+                        (stack.item == Items.WATER_BUCKET || stack.item == Items.BUCKET) &&
+                        stack.count < 16) {
+                        logger.debug("Slot avec seaux (${stack.count}/16) trouve dans hotbar: $i")
+                        future.complete(i)
+                        return@execute
+                    }
+                }
+            }
+
+            // 2) Chercher un slot vide dans la HOTBAR
+            for (i in hotbarStart..hotbarEnd) {
+                if (i < handler.slots.size) {
+                    val slot = handler.slots[i]
+                    if (slot.stack.isEmpty) {
+                        logger.debug("Slot vide trouve dans hotbar: $i")
+                        future.complete(i)
+                        return@execute
+                    }
+                }
+            }
+
+            logger.warn("Hotbar pleine - impossible de deposer les seaux")
+            future.complete(-1)
+        }
+
+        return try {
+            future.get(5, TimeUnit.SECONDS)
+        } catch (e: Exception) {
+            logger.error("Erreur lors de la recherche d'un slot pour seaux: ${e.message}")
+            -1
+        }
+    }
+
+    /**
      * Verifie si le joueur a une carte dans l'inventaire.
      * Une carte presente apres /login indique un captcha.
      * @return true si une carte est presente

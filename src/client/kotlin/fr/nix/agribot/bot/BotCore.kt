@@ -1514,16 +1514,16 @@ object BotCore {
             }
             4 -> {
                 // Etape 4: Deposer UN seau dans l'inventaire (clic droit = deposer 1)
-                // Trouver un slot vide dans l'inventaire du joueur
-                val emptySlot = InventoryManager.findEmptySlotInPlayerInventory()
-                if (emptySlot >= 0) {
-                    ActionManager.rightClickSlot(emptySlot)
+                // Priorite: empiler avec seaux existants dans hotbar > slot vide hotbar > inventaire
+                val targetSlot = InventoryManager.findBucketSlotWithSpaceInPlayerInventory()
+                if (targetSlot >= 0) {
+                    ActionManager.rightClickSlot(targetSlot)
                     bucketsRecovered++
-                    logger.info("Seau $bucketsRecovered/$bucketsToRecover recupere")
+                    logger.info("Seau $bucketsRecovered/$bucketsToRecover recupere (slot $targetSlot)")
                     bucketRecoveryStep = 5
                     wait(4)
                 } else {
-                    // Pas de slot vide, remettre le seau et continuer
+                    // Pas de slot disponible, remettre le seau et continuer
                     logger.warn("Inventaire plein - impossible de recuperer plus de seaux")
                     // Remettre le seau dans le coffre
                     val bucketSlot = InventoryManager.findFirstBucketSlotInChest()
