@@ -65,7 +65,21 @@ Ajoute une courte explication apres un tiret."""
 
                 val userPrompt = "Message de $senderName: \"$message\"\n\nCe message est-il adresse a $playerUsername ?"
 
+                // Log pour debug
+                if (config.testModeActive) {
+                    logger.info("[API MISTRAL] Analyse - Prompt systeme:")
+                    logger.info("[API MISTRAL] $systemPrompt")
+                    logger.info("[API MISTRAL] Analyse - Prompt utilisateur:")
+                    logger.info("[API MISTRAL] $userPrompt")
+                }
+
                 val response = callMistralApi(config.mistralApiKey, systemPrompt, userPrompt)
+
+                // Log de la reponse brute
+                if (config.testModeActive) {
+                    logger.info("[API MISTRAL] Reponse brute: \"$response\"")
+                }
+
                 val shouldRespond = response.uppercase().startsWith("OUI")
                 val reason = if (response.contains("-")) response.substringAfter("-").trim() else response
 
@@ -114,7 +128,20 @@ Tu joues le role de $playerUsername. Reponds UNIQUEMENT avec le message a envoye
 
                 val userPrompt = "Message de $senderName: \"$originalMessage\"\n\nGenere une reponse courte:"
 
+                // Log pour debug
+                if (config.testModeActive) {
+                    logger.info("[API MISTRAL] Generation - Prompt systeme:")
+                    logger.info("[API MISTRAL] $systemPrompt")
+                    logger.info("[API MISTRAL] Generation - Prompt utilisateur:")
+                    logger.info("[API MISTRAL] $userPrompt")
+                }
+
                 val response = callMistralApi(config.mistralApiKey, systemPrompt, userPrompt)
+
+                // Log de la reponse brute
+                if (config.testModeActive) {
+                    logger.info("[API MISTRAL] Reponse brute generation: \"$response\"")
+                }
 
                 // Nettoyer la reponse (enlever guillemets potentiels, limiter la longueur)
                 var cleanResponse = response.trim()
@@ -124,6 +151,10 @@ Tu joues le role de $playerUsername. Reponds UNIQUEMENT avec le message a envoye
                 // Limiter a 50 caracteres max pour le chat Minecraft
                 if (cleanResponse.length > 50) {
                     cleanResponse = cleanResponse.substring(0, 50)
+                }
+
+                if (config.testModeActive) {
+                    logger.info("[API MISTRAL] Reponse nettoyee: \"$cleanResponse\"")
                 }
 
                 cleanResponse
