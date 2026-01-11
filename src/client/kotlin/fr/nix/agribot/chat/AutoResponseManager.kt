@@ -211,7 +211,9 @@ object AutoResponseManager {
                                 val typingDelay = calculateTypingDelay(response)
                                 logger.info("[MODE TEST] -> Reponse generee: \"$response\"")
                                 logger.info("[MODE TEST] -> Delai de frappe simule: ${typingDelay}ms")
-                                logger.info("[MODE TEST] -> (Message NON envoye en mode test)")
+                                // Envoyer vraiment la reponse dans le chat (conditions reelles)
+                                scheduleResponse(response)
+                                logger.info("[MODE TEST] -> Message programme pour envoi!")
                             } else {
                                 logger.error("[MODE TEST] -> ERREUR: Reponse vide generee")
                             }
@@ -251,16 +253,14 @@ object AutoResponseManager {
             val typingDelay = calculateTypingDelay("damn neige")
 
             if (config.testModeActive) {
-                // En mode test, juste logger
+                // En mode test, logger ET envoyer (conditions reelles)
                 logger.info("[MODE TEST] Pattern 'damn' detecte!")
                 logger.info("[MODE TEST] -> Reponse: \"damn neige\"")
                 logger.info("[MODE TEST] -> Delai de frappe simule: ${typingDelay}ms")
-                logger.info("[MODE TEST] -> (Message NON envoye en mode test)")
-            } else {
-                // Mode normal: envoyer la reponse
-                scheduleResponse("damn neige")
-                logger.info("Reponse damn envoyee pour: $message")
             }
+            // Envoyer la reponse (mode test ou normal)
+            scheduleResponse("damn neige")
+            logger.info("Reponse damn programmee pour: $message")
             return true
         }
 
@@ -366,10 +366,9 @@ object AutoResponseManager {
     private fun sendResponse(message: String) {
         val config = AutoResponseConfig.get()
 
-        // En mode test, ne pas envoyer vraiment
+        // Log en mode test
         if (config.testModeActive) {
-            logger.info("[TEST] Envoi simule: $message")
-            return
+            logger.info("[MODE TEST] Envoi reel du message: $message")
         }
 
         // Envoyer sur le thread principal de Minecraft

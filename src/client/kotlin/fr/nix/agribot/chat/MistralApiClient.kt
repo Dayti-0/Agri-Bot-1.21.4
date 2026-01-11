@@ -46,19 +46,21 @@ object MistralApiClient {
                 }
 
                 val systemPrompt = """Tu es un assistant qui analyse les messages de chat dans un jeu Minecraft multijoueur.
-Tu dois determiner si un message est adresse directement au joueur "$playerUsername" ou pas.
+Tu dois determiner si un message est adresse au joueur "$playerUsername" ou s'il merite une reponse.
 
 Un message DOIT recevoir une reponse SI:
 - Il contient le pseudo "$playerUsername" (ou une variante proche)
-- Il est clairement adresse au joueur qui vient de se connecter (ex: "salut toi", "oh le boss est la", "wesh t'es la")
-- C'est une salutation directe apres une connexion recente
+- C'est une salutation simple sans destinataire specifique (yo, wesh, wsh, salut, hey, cc, coucou, hello, slt)
+- Il est clairement adresse au joueur (ex: "salut toi", "oh le boss est la", "wesh t'es la")
+- C'est une question directe ou une demande d'attention (ex: "ca va ?", "cv", "t'es la ?")
 
 Un message NE DOIT PAS recevoir de reponse SI:
-- C'est une question generale (ex: "qui veut pvp ?", "quelqu'un a des diamonds ?", "qui veut farm ?")
-- C'est un message adresse a quelqu'un d'autre (ex: "Redstone tu peux venir", "Admin tu es la ?")
-- C'est un commentaire general (ex: "mdr", "gg", "le serveur lag", "ca lag")
-- C'est une annonce generale (ex: "cc tout le monde", "bonsoir tout le monde")
-- Le message ne mentionne pas du tout le joueur et n'est pas une reaction directe a sa connexion
+- C'est une question generale avec "qui" (ex: "qui veut pvp ?", "qui a des diamonds ?")
+- C'est un message adresse a quelqu'un d'autre par son pseudo (ex: "Redstone tu peux venir", "Admin tu es la ?")
+- C'est un commentaire/reaction general (ex: "mdr", "gg", "lol", "le serveur lag")
+- C'est une annonce a tout le monde (ex: "cc tout le monde", "bonsoir a tous")
+
+IMPORTANT: Une salutation simple comme "yo", "wesh", "salut" SANS autre pseudo mentionne = OUI (on repond)
 
 Reponds UNIQUEMENT par "OUI" si le message necessite une reponse, ou "NON" sinon.
 Ajoute une courte explication apres un tiret."""
