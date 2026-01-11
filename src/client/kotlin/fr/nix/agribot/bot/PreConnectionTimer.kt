@@ -1,6 +1,7 @@
 package fr.nix.agribot.bot
 
 import fr.nix.agribot.AgriBotClient
+import fr.nix.agribot.config.AgriConfig
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.screen.multiplayer.ConnectScreen
@@ -81,6 +82,19 @@ object PreConnectionTimer {
 
         val currentTime = System.currentTimeMillis()
         if (currentTime >= timerEndTime) {
+            val config = AgriBotClient.config
+
+            // Verifier si on est dans la periode de redemarrage serveur (5h40-6h40)
+            if (config.isServerRestartPeriod()) {
+                val waitTime = config.getTimeUntilRestartEnd()
+                if (waitTime > 0) {
+                    // Reporter la connexion a 6h30
+                    timerEndTime = currentTime + waitTime
+                    logger.info("Periode de redemarrage serveur - connexion reportee a 6h30 (attente ${waitTime / 60000} min)")
+                    return
+                }
+            }
+
             logger.info("Timer de pre-connexion expire - connexion au serveur...")
             val screen = parentScreen
             timerEndTime = 0
