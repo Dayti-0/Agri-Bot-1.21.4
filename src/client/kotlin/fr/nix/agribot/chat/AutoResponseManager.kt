@@ -29,6 +29,10 @@ object AutoResponseManager {
     // ou: [Admin] Pseudo » Message
     private val CHAT_MESSAGE_REGEX = Regex("""^\[.*?\]\s*(?:《[^》]+》)?([^\s★☆⚡☠🌙✨🔥❄☢⭐»]+)[^\s»]*\s*»\s*(.+)$""")
 
+    // Regex pour parser les messages de chat en mode solo/local
+    // Format: < Pseudo> Message ou <Pseudo> Message
+    private val SOLO_CHAT_MESSAGE_REGEX = Regex("""^<\s*(\S+)\s*>\s*(.+)$""")
+
     // Timestamp de la connexion au serveur de jeu
     private var connectionTimestamp: Long = 0
 
@@ -107,19 +111,29 @@ object AutoResponseManager {
         // Verifier si le systeme est active
         if (!config.enabled && !config.testModeActive) return
 
+        // Extraire le contenu du message de chat (format serveur ou solo)
+        val chatContent = extractChatContent(rawMessage)
+
         // Mode test: traiter les messages "msg:xxx"
-        if (config.testModeActive && rawMessage.startsWith("msg:", ignoreCase = true)) {
-            val testMessage = rawMessage.substringAfter("msg:").trim()
-            logger.info("[TEST] Analyse du message: $testMessage")
-            processTestMessage(testMessage)
+        if (config.testModeActive) {
+            // Verifier si le contenu du message contient "msg:"
+            if (chatContent != null && chatContent.content.startsWith("msg:", ignoreCase = true)) {
+                val testMessage = chatContent.content.substringAfter("msg:").trim()
+                logger.info("[MODE TEST] ====================================")
+                logger.info("[MODE TEST] Message de test recu de ${chatContent.sender}")
+                logger.info("[MODE TEST] Contenu a analyser: \"$testMessage\"")
+                processTestMessage(testMessage, chatContent.sender)
+                return
+            }
+            // Ignorer les autres messages en mode test
             return
         }
 
         // Mode normal: verifier qu'on est dans la fenetre de detection
-        if (!config.testModeActive && !isInDetectionWindow()) return
+        if (!isInDetectionWindow()) return
 
-        // Extraire le contenu du message de chat
-        val chatContent = extractChatContent(rawMessage) ?: return
+        // Le contenu doit etre valide
+        if (chatContent == null) return
 
         // Verifier si deja traite
         val messageKey = "${chatContent.sender}:${chatContent.content}"
@@ -143,55 +157,77 @@ object AutoResponseManager {
 
     /**
      * Traite un message de test (mode test actif).
+     * @param message Le message a analyser
+     * @param sender Le pseudo de l'expediteur (utilise pour le contexte)
      */
-    private fun processTestMessage(message: String) {
+    private fun processTestMessage(message: String, sender: String = "TestPlayer") {
         val config = AutoResponseConfig.get()
         val playerName = getPlayerUsername()
 
-        // Simuler un expediteur pour le test
-        val testSender = "TestPlayer"
-
-        ChatManager.showLocalMessage("[TEST] Analyse: \"$message\"", "e")
+        logger.info("[MODE TEST] ------------------------------------")
+        logger.info("[MODE TEST] Expediteur: $sender")
+        logger.info("[MODE TEST] Joueur (bot): $playerName")
+        logger.info("[MODE TEST] Message: \"$message\"")
 
         // Verifier d'abord les reponses speciales (damn)
-        if (checkDamnResponse(testSender, message)) {
+        val normalizedSender = normalizeText(sender)
+        val isDamnFriend = config.damnFriends.any { friend ->
+            normalizedSender.contains(normalizeText(friend), ignoreCase = true)
+        }
+        logger.info("[MODE TEST] Est ami damn: $isDamnFriend (amis: ${config.damnFriends})")
+
+        if (checkDamnResponse(sender, message)) {
+            logger.info("[MODE TEST] -> Reponse damn declenchee!")
             return
         }
 
         // Analyser avec l'API Mistral
         if (!config.isApiConfigured()) {
-            ChatManager.showLocalMessage("[TEST] Erreur: API Mistral non configuree", "c")
+            logger.error("[MODE TEST] ERREUR: API Mistral non configuree")
+            logger.error("[MODE TEST] Cle API presente: ${config.mistralApiKey.isNotBlank()}")
             return
         }
 
-        MistralApiClient.analyzeMessage(message, playerName, testSender)
-            .thenAccept { analysis ->
-                client.execute {
-                    if (analysis.shouldRespond) {
-                        ChatManager.showLocalMessage("[TEST] Detection: OUI - ${analysis.reason}", "a")
+        logger.info("[MODE TEST] Envoi a l'API Mistral pour analyse...")
+        logger.info("[MODE TEST] Question: Ce message est-il adresse a $playerName ?")
 
-                        // Generer la reponse
-                        MistralApiClient.generateResponse(message, testSender, playerName)
-                            .thenAccept { response ->
-                                client.execute {
-                                    if (response.isNotEmpty()) {
-                                        val typingDelay = calculateTypingDelay(response)
-                                        ChatManager.showLocalMessage("[TEST] Reponse (${typingDelay}ms): \"$response\"", "a")
-                                        // En mode test, on n'envoie pas vraiment le message
-                                    } else {
-                                        ChatManager.showLocalMessage("[TEST] Erreur generation reponse", "c")
-                                    }
-                                }
+        MistralApiClient.analyzeMessage(message, playerName, sender)
+            .thenAccept { analysis ->
+                logger.info("[MODE TEST] ------------------------------------")
+                logger.info("[MODE TEST] RESULTAT ANALYSE:")
+                logger.info("[MODE TEST] -> Doit repondre: ${if (analysis.shouldRespond) "OUI" else "NON"}")
+                logger.info("[MODE TEST] -> Raison: ${analysis.reason}")
+
+                if (analysis.shouldRespond) {
+                    logger.info("[MODE TEST] ------------------------------------")
+                    logger.info("[MODE TEST] Generation de la reponse...")
+
+                    // Generer la reponse
+                    MistralApiClient.generateResponse(message, sender, playerName)
+                        .thenAccept { response ->
+                            logger.info("[MODE TEST] ------------------------------------")
+                            logger.info("[MODE TEST] RESULTAT GENERATION:")
+                            if (response.isNotEmpty()) {
+                                val typingDelay = calculateTypingDelay(response)
+                                logger.info("[MODE TEST] -> Reponse generee: \"$response\"")
+                                logger.info("[MODE TEST] -> Delai de frappe simule: ${typingDelay}ms")
+                                // Envoyer vraiment la reponse dans le chat (conditions reelles)
+                                scheduleResponse(response)
+                                logger.info("[MODE TEST] -> Message programme pour envoi!")
+                            } else {
+                                logger.error("[MODE TEST] -> ERREUR: Reponse vide generee")
                             }
-                    } else {
-                        ChatManager.showLocalMessage("[TEST] Detection: NON - ${analysis.reason}", "6")
-                    }
+                            logger.info("[MODE TEST] ====================================")
+                        }
+                } else {
+                    logger.info("[MODE TEST] -> Pas de reponse necessaire")
+                    logger.info("[MODE TEST] ====================================")
                 }
             }
             .exceptionally { e ->
-                client.execute {
-                    ChatManager.showLocalMessage("[TEST] Erreur: ${e.message}", "c")
-                }
+                logger.error("[MODE TEST] ERREUR API: ${e.message}")
+                logger.error("[MODE TEST] Stack trace:", e)
+                logger.info("[MODE TEST] ====================================")
                 null
             }
     }
@@ -214,14 +250,17 @@ object AutoResponseManager {
 
         // Verifier les patterns "damn"
         if (normalizedMessage.contains("damn neige") || normalizedMessage == "damn") {
-            // Repondre "damn neige"
-            scheduleResponse("damn neige")
-            logger.info("Reponse damn envoyee pour: $message")
+            val typingDelay = calculateTypingDelay("damn neige")
 
             if (config.testModeActive) {
-                val typingDelay = calculateTypingDelay("damn neige")
-                ChatManager.showLocalMessage("[TEST] Reponse damn (${typingDelay}ms): \"damn neige\"", "a")
+                // En mode test, logger ET envoyer (conditions reelles)
+                logger.info("[MODE TEST] Pattern 'damn' detecte!")
+                logger.info("[MODE TEST] -> Reponse: \"damn neige\"")
+                logger.info("[MODE TEST] -> Delai de frappe simule: ${typingDelay}ms")
             }
+            // Envoyer la reponse (mode test ou normal)
+            scheduleResponse("damn neige")
+            logger.info("Reponse damn programmee pour: $message")
             return true
         }
 
@@ -327,10 +366,9 @@ object AutoResponseManager {
     private fun sendResponse(message: String) {
         val config = AutoResponseConfig.get()
 
-        // En mode test, ne pas envoyer vraiment
+        // Log en mode test
         if (config.testModeActive) {
-            logger.info("[TEST] Envoi simule: $message")
-            return
+            logger.info("[MODE TEST] Envoi reel du message: $message")
         }
 
         // Envoyer sur le thread principal de Minecraft
@@ -346,7 +384,7 @@ object AutoResponseManager {
     private data class ChatContent(val sender: String, val content: String)
 
     /**
-     * Extrait le contenu d'un message de chat du serveur.
+     * Extrait le contenu d'un message de chat du serveur ou en mode solo.
      * @param rawMessage Message brut (peut contenir prefixes de log)
      * @return ChatContent ou null si pas un message de chat valide
      */
@@ -360,11 +398,24 @@ object AutoResponseManager {
             message = message.substringAfter("[CHAT]").trim()
         }
 
-        // Parser le format du serveur
-        val match = CHAT_MESSAGE_REGEX.find(message)
-        if (match != null) {
-            val sender = match.groupValues[1].trim()
-            val content = match.groupValues[2].trim()
+        // Supprimer les codes couleur Minecraft (§x)
+        message = message.replace(Regex("§[0-9a-fk-or]"), "")
+
+        // 1. Parser le format du serveur multijoueur
+        // Format: [niveau] 《Guilde》Pseudo★ » Message
+        val serverMatch = CHAT_MESSAGE_REGEX.find(message)
+        if (serverMatch != null) {
+            val sender = serverMatch.groupValues[1].trim()
+            val content = serverMatch.groupValues[2].trim()
+            return ChatContent(sender, content)
+        }
+
+        // 2. Parser le format solo/local
+        // Format: < Pseudo> Message ou <Pseudo> Message
+        val soloMatch = SOLO_CHAT_MESSAGE_REGEX.find(message)
+        if (soloMatch != null) {
+            val sender = soloMatch.groupValues[1].trim()
+            val content = soloMatch.groupValues[2].trim()
             return ChatContent(sender, content)
         }
 
