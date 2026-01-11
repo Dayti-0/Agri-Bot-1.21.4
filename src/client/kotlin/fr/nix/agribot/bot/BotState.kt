@@ -100,6 +100,12 @@ data class BotStateData(
     /** True si la prochaine session doit forcer le remplissage complet (apres event) */
     var forceFullWaterRefill: Boolean = false,
 
+    // Gestion des deconnexions inattendues (crash/connection reset)
+    /** True si la pause actuelle est due a une deconnexion inattendue */
+    var isCrashReconnectPause: Boolean = false,
+    /** Etat du bot avant la deconnexion (pour log informatif) */
+    var stateBeforeCrash: BotState? = null,
+
     // OPTIMISATION: Cache des stations actives (evite recalcul a chaque tick)
     /** Liste des stations actives cachee au debut de la session */
     var cachedStations: List<String> = emptyList()
@@ -115,6 +121,8 @@ data class BotStateData(
         isEventPause = false
         canReconnectAfterEvent = true
         forceFullWaterRefill = false
+        isCrashReconnectPause = false
+        stateBeforeCrash = null
         cachedStations = emptyList()
         startupEndTime = 0
     }

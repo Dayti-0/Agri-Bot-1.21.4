@@ -68,6 +68,9 @@ data class AgriConfig(
         const val EVENT_PAUSE_SECONDS = 2 * 60 * 60 // 2 heures = 7200 secondes
         const val EVENT_PAUSE_MINUTES = 120 // 2 heures en minutes
 
+        // Delai de reconnexion apres une deconnexion inattendue (crash/connection reset)
+        const val CRASH_RECONNECT_DELAY_SECONDS = 2 * 60 // 2 minutes = 120 secondes
+
         // Seuil de fusion des sessions (si prochaine session dans moins de X minutes, faire maintenant)
         const val SESSION_MERGE_THRESHOLD_MINUTES = 60 // 1 heure
 

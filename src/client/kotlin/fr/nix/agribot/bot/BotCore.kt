@@ -287,6 +287,66 @@ object BotCore {
     }
 
     /**
+     * Reprend la session de farming apres une deconnexion inattendue (crash).
+     * Contrairement a startFarmingSession(), cette fonction ne reinitialise PAS currentStationIndex.
+     * Elle reprend a la station ou le bot s'est arrete.
+     */
+    private fun resumeFarmingSession() {
+        // Verifier la connexion
+        if (!ChatManager.isConnected()) {
+            ChatManager.showActionBar("Pas connecte au serveur!", "c")
+            stateData.errorMessage = "Pas connecte au serveur apres reconnexion"
+            stateData.state = BotState.ERROR
+            return
+        }
+
+        val stations = stateData.cachedStations
+        val currentStation = if (stateData.currentStationIndex < stations.size) {
+            stations[stateData.currentStationIndex]
+        } else {
+            "N/A"
+        }
+
+        logger.info("========================================")
+        logger.info("REPRISE DE SESSION APRES CRASH")
+        logger.info("Station de reprise: $currentStation (${stateData.currentStationIndex + 1}/${stateData.totalStations})")
+        logger.info("Stations deja completees: ${stateData.stationsCompleted}")
+        logger.info("Session eau uniquement: ${stateData.isWaterOnlySession}")
+        logger.info("Plante: ${config.selectedPlant}")
+        logger.info("========================================")
+
+        // Reset des flags de crash
+        stateData.isCrashReconnectPause = false
+        stateData.stateBeforeCrash = null
+
+        // Reinitialiser le delai adaptatif
+        BucketManager.resetAdaptiveDelay()
+
+        // Log l'etat des seaux
+        BucketManager.logState()
+
+        // Reset des detections de chat
+        ChatListener.resetAllDetections()
+
+        // Reinitialiser l'etat de la premiere station (pour les delais de chargement)
+        stateData.isFirstStationOfSession = true
+        stateData.sessionStartTime = System.currentTimeMillis()
+
+        val sessionType = if (stateData.isWaterOnlySession) "Reprise remplissage" else "Reprise farming"
+        val stationsRestantes = stateData.totalStations - stateData.currentStationIndex
+        ChatManager.showActionBar("$sessionType - $stationsRestantes stations restantes", "a")
+
+        // Verifier si on doit gerer les seaux (transition matin/apres-midi)
+        if (BucketManager.needsModeTransition()) {
+            bucketManagementStep = 0
+            stateData.state = BotState.MANAGING_BUCKETS
+        } else {
+            BucketManager.saveCurrentMode()
+            stateData.state = BotState.TELEPORTING
+        }
+    }
+
+    /**
      * Arrete le bot.
      */
     fun stop() {
@@ -318,9 +378,7 @@ object BotCore {
             if (!periodicConnectionCheck()) {
                 // Deconnexion detectee - gerer selon l'etat actuel
                 if (stateData.state != BotState.CONNECTING) {
-                    logger.error("Deconnexion inattendue detectee en etat ${stateData.state}")
-                    stateData.errorMessage = "Connexion perdue (etat: ${stateData.state})"
-                    stateData.state = BotState.ERROR
+                    handleUnexpectedDisconnection()
                     return
                 }
             }
@@ -500,6 +558,54 @@ object BotCore {
         waitMs(AgriConfig.EVENT_PAUSE_SECONDS * 1000)
     }
 
+    /**
+     * Gere une deconnexion inattendue (crash, connection reset, etc.).
+     * Au lieu d'arreter le bot, il attend 2 minutes puis se reconnecte et reprend la session.
+     */
+    private fun handleUnexpectedDisconnection() {
+        val currentState = stateData.state
+        val stations = stateData.cachedStations
+        val currentStation = if (stateData.currentStationIndex < stations.size) {
+            stations[stateData.currentStationIndex]
+        } else {
+            "N/A"
+        }
+
+        logger.warn("========================================")
+        logger.warn("DECONNEXION INATTENDUE DETECTEE")
+        logger.warn("Etat au moment du crash: $currentState")
+        logger.warn("Station: $currentStation (${stateData.currentStationIndex + 1}/${stateData.totalStations})")
+        logger.warn("Stations completees: ${stateData.stationsCompleted}")
+        logger.warn("Le bot va attendre 2 minutes puis se reconnecter")
+        logger.warn("========================================")
+
+        // Fermer tout menu ouvert et relacher les touches
+        ActionManager.closeScreen()
+        ActionManager.releaseAllKeys()
+
+        // Afficher le message a l'utilisateur
+        ChatManager.showActionBar("Deconnexion! Reconnexion dans 2 min...", "e")
+
+        // Preparer la reconnexion
+        ServerConnector.disconnectAndPrepareReconnect()
+
+        // Configurer la pause de reconnexion apres crash
+        stateData.apply {
+            isCrashReconnectPause = true
+            stateBeforeCrash = currentState
+            pauseEndTime = System.currentTimeMillis() + (AgriConfig.CRASH_RECONNECT_DELAY_SECONDS * 1000L)
+            // On garde currentStationIndex et les autres donnees de session pour reprendre
+            isFirstStationOfSession = true  // Reinitialiser car on va recharger le monde
+        }
+
+        logger.info("Pause de ${AgriConfig.CRASH_RECONNECT_DELAY_SECONDS / 60} minutes avant reconnexion")
+        logger.info("Reprise a la station: $currentStation (${stateData.currentStationIndex + 1}/${stateData.totalStations})")
+
+        // Passer en pause
+        stateData.state = BotState.PAUSED
+        waitMs(AgriConfig.CRASH_RECONNECT_DELAY_SECONDS * 1000)
+    }
+
     private fun handleConnecting() {
         // Si on est en attente de retry, decrementer le delai
         if (connectionRetryDelayTicks > 0) {
@@ -530,9 +636,16 @@ object BotCore {
         // Verifier si la connexion est terminee
         if (ServerConnector.isFinished()) {
             if (ServerConnector.isConnected()) {
-                logger.info("Connexion automatique reussie - demarrage session farming")
                 connectionRetryCount = 0  // Reset pour la prochaine fois
-                startFarmingSession()
+
+                // Verifier si on doit reprendre une session apres un crash
+                if (stateData.isCrashReconnectPause) {
+                    logger.info("Connexion reussie - REPRISE de la session apres crash")
+                    resumeFarmingSession()
+                } else {
+                    logger.info("Connexion automatique reussie - demarrage session farming")
+                    startFarmingSession()
+                }
             } else {
                 // Erreur de connexion - verifier si on peut retenter
                 val errorContext = "Connexion serveur '${config.serverAddress}' echouee: ${ServerConnector.errorMessage}"
@@ -1347,8 +1460,25 @@ object BotCore {
     }
 
     private fun handlePaused() {
-        // Fin de pause, verifier si c'est une pause event
-        if (stateData.isEventPause) {
+        // Fin de pause, verifier le type de pause
+        if (stateData.isCrashReconnectPause) {
+            // Pause due a une deconnexion inattendue (crash)
+            val stations = stateData.cachedStations
+            val currentStation = if (stateData.currentStationIndex < stations.size) {
+                stations[stateData.currentStationIndex]
+            } else {
+                "N/A"
+            }
+
+            logger.info("========================================")
+            logger.info("FIN DE PAUSE CRASH - RECONNEXION")
+            logger.info("Etat avant crash: ${stateData.stateBeforeCrash}")
+            logger.info("Reprise a la station: $currentStation (${stateData.currentStationIndex + 1}/${stateData.totalStations})")
+            logger.info("========================================")
+
+            ChatManager.showActionBar("Fin pause - Reconnexion et reprise...", "a")
+            // Note: isCrashReconnectPause est reset dans handleConnecting() apres la reprise de session
+        } else if (stateData.isEventPause) {
             // Pause due a un event (teleportation forcee)
             if (!stateData.canReconnectAfterEvent) {
                 // Eau insuffisante - on se reconnecte quand meme mais on avertit
