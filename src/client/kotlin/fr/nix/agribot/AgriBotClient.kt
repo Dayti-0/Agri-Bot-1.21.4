@@ -3,6 +3,7 @@ package fr.nix.agribot
 import fr.nix.agribot.bot.AutoStartManager
 import fr.nix.agribot.bot.BotCore
 import fr.nix.agribot.bot.BotState
+import fr.nix.agribot.bot.PreConnectionTimer
 import fr.nix.agribot.config.AgriConfig
 import fr.nix.agribot.config.Plants
 import fr.nix.agribot.input.KeyBindings
@@ -26,6 +27,7 @@ object AgriBotClient : ClientModInitializer {
     private var lastBotState: BotState? = null
     private var lastPauseEndTime: Long = 0
     private var lastStartupEndTime: Long = 0
+    private var lastPreConnectionTimerActive: Boolean = false
 
     override fun onInitializeClient() {
         logger.info("==================================================")
@@ -43,6 +45,9 @@ object AgriBotClient : ClientModInitializer {
 
         // Initialiser le gestionnaire de demarrage automatique
         AutoStartManager.init()
+
+        // Initialiser le timer de pre-connexion
+        PreConnectionTimer.init()
 
         // Enregistrer le rendu du timer de session sur l'ecran multijoueur
         registerSessionTimerRenderer()
@@ -90,11 +95,13 @@ object AgriBotClient : ClientModInitializer {
         val currentBotState = BotCore.stateData.state
         val currentPauseEndTime = BotCore.stateData.pauseEndTime
         val currentStartupEndTime = BotCore.stateData.startupEndTime
+        val currentPreConnectionTimerActive = PreConnectionTimer.isActive
 
         val needsUpdate = cachedTimerText == null ||
                           currentTime - lastTimerUpdateTime >= 1000 ||
                           currentBotEnabled != lastBotEnabled ||
                           currentBotState != lastBotState ||
+                          currentPreConnectionTimerActive != lastPreConnectionTimerActive ||
                           (currentBotState == BotState.PAUSED && currentPauseEndTime != lastPauseEndTime) ||
                           (currentBotState == BotState.WAITING_STARTUP && currentStartupEndTime != lastStartupEndTime)
 
@@ -104,6 +111,7 @@ object AgriBotClient : ClientModInitializer {
             lastBotState = currentBotState
             lastPauseEndTime = currentPauseEndTime
             lastStartupEndTime = currentStartupEndTime
+            lastPreConnectionTimerActive = currentPreConnectionTimerActive
 
             // Recalculer le texte et la couleur
             updateTimerCache(currentTime)
@@ -124,6 +132,13 @@ object AgriBotClient : ClientModInitializer {
     private fun updateTimerCache(currentTime: Long) {
         cachedTimerText = null
         cachedTimerColor = 0x55FF55
+
+        // Verifier d'abord si le timer de pre-connexion est actif
+        if (PreConnectionTimer.isActive) {
+            cachedTimerText = PreConnectionTimer.formatRemainingTime()
+            cachedTimerColor = 0xFFFF55  // Jaune
+            return
+        }
 
         if (!config.botEnabled) {
             val hasPassword = config.loginPassword.isNotBlank()

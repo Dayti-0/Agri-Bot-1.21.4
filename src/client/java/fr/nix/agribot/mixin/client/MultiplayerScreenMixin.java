@@ -1,15 +1,11 @@
 package fr.nix.agribot.mixin.client;
 
 import fr.nix.agribot.AgriBotClient;
-import fr.nix.agribot.bot.AutoStartManager;
+import fr.nix.agribot.bot.PreConnectionTimer;
 import fr.nix.agribot.config.AgriConfig;
-import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.screen.multiplayer.ConnectScreen;
 import net.minecraft.client.gui.screen.multiplayer.MultiplayerScreen;
 import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.network.ServerAddress;
-import net.minecraft.client.network.ServerInfo;
 import net.minecraft.text.Text;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -69,7 +65,6 @@ public abstract class MultiplayerScreenMixin extends Screen {
     }
 
     private void connectAndStartBot() {
-        MinecraftClient client = MinecraftClient.getInstance();
         AgriConfig config = AgriBotClient.INSTANCE.getConfig();
 
         // Verifier que le mot de passe est configure
@@ -78,29 +73,8 @@ public abstract class MultiplayerScreenMixin extends Screen {
             return;
         }
 
-        String serverAddress = config.getServerAddress();
-
-        // Creer les infos du serveur
-        ServerInfo serverInfo = new ServerInfo(
-            "SurvivalWorld",
-            serverAddress,
-            ServerInfo.ServerType.OTHER
-        );
-
-        // Parser l'adresse
-        ServerAddress address = ServerAddress.parse(serverAddress);
-
-        // Activer le demarrage automatique du bot
-        AutoStartManager.INSTANCE.setAutoStartEnabled(true);
-
-        // Se connecter au serveur
-        ConnectScreen.connect(
-            this,
-            client,
-            address,
-            serverInfo,
-            false,
-            null
-        );
+        // Demarrer le timer de pre-connexion (gere le delai et la connexion)
+        int delayMinutes = config.getStartupDelayMinutes();
+        PreConnectionTimer.INSTANCE.startTimer(delayMinutes, this);
     }
 }
