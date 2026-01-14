@@ -24,10 +24,14 @@ object AutoResponseManager {
     private val DIACRITICS_PATTERN = "\\p{InCombiningDiacriticalMarks}+".toRegex()
 
     // Regex pour parser les messages de chat du serveur
-    // Format: [niveau] 《Guilde》Pseudo★ » Message
-    // ou: [niveau] Pseudo » Message
-    // ou: [Admin] Pseudo » Message
-    private val CHAT_MESSAGE_REGEX = Regex("""^\[.*?\]\s*(?:《[^》]+》)?([^\s★☆⚡☠🌙✨🔥❄☢⭐»]+)[^\s»]*\s*»\s*(.+)$""")
+    // Capture le pseudo (commençant par une lettre) juste avant le separateur »
+    // Fonctionne avec tous les formats:
+    // - [niveau] 《Guilde》Pseudo★ » Message
+    // - [niveau] Pseudo » Message
+    // - [Admin] Pseudo » Message
+    // - ShopDeGott Pseudo » Message (format shop sans crochets)
+    // - Pseudo » Message (format simple)
+    private val CHAT_MESSAGE_REGEX = Regex("""([A-Za-z_][A-Za-z0-9_]*)[★☆⚡☠🌙✨🔥❄☢⭐]*\s*»\s*(.+)$""")
 
     // Regex pour parser les messages de chat en mode solo/local
     // Format: < Pseudo> Message ou <Pseudo> Message
@@ -402,11 +406,12 @@ object AutoResponseManager {
         message = message.replace(Regex("§[0-9a-fk-or]"), "")
 
         // 1. Parser le format du serveur multijoueur
-        // Format: [niveau] 《Guilde》Pseudo★ » Message
+        // Capture le pseudo (commençant par une lettre) juste avant »
         val serverMatch = CHAT_MESSAGE_REGEX.find(message)
         if (serverMatch != null) {
             val sender = serverMatch.groupValues[1].trim()
             val content = serverMatch.groupValues[2].trim()
+            logger.debug("Message parse: sender='$sender', content='$content' (raw: '$message')")
             return ChatContent(sender, content)
         }
 
@@ -416,7 +421,13 @@ object AutoResponseManager {
         if (soloMatch != null) {
             val sender = soloMatch.groupValues[1].trim()
             val content = soloMatch.groupValues[2].trim()
+            logger.debug("Message solo parse: sender='$sender', content='$content'")
             return ChatContent(sender, content)
+        }
+
+        // Log si le message contient » mais n'a pas ete parse (potentiel bug)
+        if (message.contains("»")) {
+            logger.debug("Message avec » non parse: '$message'")
         }
 
         return null
