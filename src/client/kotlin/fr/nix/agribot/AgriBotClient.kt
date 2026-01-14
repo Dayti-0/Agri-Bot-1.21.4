@@ -10,6 +10,7 @@ import fr.nix.agribot.config.AutoResponseConfig
 import fr.nix.agribot.config.Plants
 import fr.nix.agribot.input.KeyBindings
 import net.fabricmc.api.ClientModInitializer
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.screen.multiplayer.MultiplayerScreen
@@ -55,6 +56,9 @@ object AgriBotClient : ClientModInitializer {
         AutoResponseConfig.load()
         AutoResponseManager.init()
 
+        // Enregistrer l'event de connexion au serveur pour activer l'auto-reponse
+        registerServerConnectionEvent()
+
         // Enregistrer le rendu du timer de session sur l'ecran multijoueur
         registerSessionTimerRenderer()
 
@@ -73,6 +77,17 @@ object AgriBotClient : ClientModInitializer {
         logger.info("==================================================")
         logger.info("Touches: F6 (toggle bot) | F8 (configuration)")
         logger.info("AgriBot pret!")
+    }
+
+    /**
+     * Enregistre l'event de connexion au serveur pour activer l'auto-reponse.
+     * Cela permet a l'auto-reponse de fonctionner meme en connexion manuelle.
+     */
+    private fun registerServerConnectionEvent() {
+        ClientPlayConnectionEvents.JOIN.register { handler, sender, client ->
+            logger.info("Connexion au serveur detectee - Activation auto-reponse")
+            AutoResponseManager.onGameServerConnected()
+        }
     }
 
     /**
