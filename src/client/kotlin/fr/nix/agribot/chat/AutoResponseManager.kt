@@ -205,16 +205,35 @@ object AutoResponseManager {
         val isActiveConversation = hasActiveConversation(sender)
         logger.info("[MODE TEST] Conversation active: $isActiveConversation")
 
+        // Verifier si le pseudo du bot est mentionne
+        val pseudoMentioned = isPlayerMentioned(message, playerName)
+        logger.info("[MODE TEST] Pseudo mentionne: $pseudoMentioned")
+
         logger.info("[MODE TEST] ------------------------------------")
         logger.info("[MODE TEST] ETAPE 1: CLASSIFICATION")
 
         MistralApiClient.analyzeMessage(message, playerName, sender, isActiveConversation)
             .thenAccept { analysis ->
                 logger.info("[MODE TEST] -> Categorie: ${analysis.category}")
-                logger.info("[MODE TEST] -> Doit repondre: ${if (analysis.shouldRespond) "OUI" else "NON"}")
+                logger.info("[MODE TEST] -> Doit repondre (Mistral): ${if (analysis.shouldRespond) "OUI" else "NON"}")
                 logger.info("[MODE TEST] -> Raison: ${analysis.reason}")
 
                 if (analysis.shouldRespond) {
+                    // FILTRAGE SUPPLEMENTAIRE POUR LES QUESTIONS
+                    val isGreeting = analysis.category == MistralApiClient.MessageCategory.GREETING ||
+                                     analysis.category == MistralApiClient.MessageCategory.GREETING_WITH_STATE
+
+                    val shouldActuallyRespond = isGreeting || pseudoMentioned || isActiveConversation
+
+                    logger.info("[MODE TEST] -> Est salutation: $isGreeting")
+                    logger.info("[MODE TEST] -> Repondre (filtre final): ${if (shouldActuallyRespond) "OUI" else "NON (question sans mention)"}")
+
+                    if (!shouldActuallyRespond) {
+                        logger.info("[MODE TEST] -> Question ignoree (pseudo non mentionne, pas de conversation active)")
+                        logger.info("[MODE TEST] ====================================")
+                        return@thenAccept
+                    }
+
                     logger.info("[MODE TEST] ------------------------------------")
                     logger.info("[MODE TEST] ETAPE 2: GENERATION (categorie: ${analysis.category})")
 
@@ -298,9 +317,24 @@ object AutoResponseManager {
     }
 
     /**
+     * Verifie si le pseudo du bot est mentionne dans le message.
+     */
+    private fun isPlayerMentioned(message: String, playerName: String): Boolean {
+        val normalizedMessage = normalizeText(message)
+        val normalizedPlayerName = normalizeText(playerName)
+        return normalizedMessage.contains(normalizedPlayerName)
+    }
+
+    /**
      * Analyse un message avec l'API Mistral et repond si necessaire.
      * Utilise le systeme a 2 etapes: Classification -> Generation
      * Prend en compte le contexte conversationnel (conversations actives).
+     *
+     * FILTRAGE DES QUESTIONS:
+     * - Salutations (GREETING, GREETING_WITH_STATE): toujours repondre (poli)
+     * - Questions (autres categories): repondre uniquement si:
+     *   - Le pseudo du bot est mentionne dans le message, OU
+     *   - Une conversation active existe avec l'expediteur
      */
     private fun analyzeAndRespond(sender: String, message: String, playerName: String) {
         val config = AutoResponseConfig.get()
@@ -316,10 +350,28 @@ object AutoResponseManager {
             logger.info("Conversation active detectee avec $sender")
         }
 
+        // Verifier si le pseudo du bot est mentionne
+        val pseudoMentioned = isPlayerMentioned(message, playerName)
+        if (pseudoMentioned) {
+            logger.info("Pseudo mentionne dans le message")
+        }
+
         // ETAPE 1: Classification du message (avec contexte conversationnel)
         MistralApiClient.analyzeMessage(message, playerName, sender, isActiveConversation)
             .thenAccept { analysis ->
                 if (analysis.shouldRespond) {
+                    // FILTRAGE SUPPLEMENTAIRE POUR LES QUESTIONS
+                    // Les salutations passent toujours, les questions necessitent mention ou conversation active
+                    val isGreeting = analysis.category == MistralApiClient.MessageCategory.GREETING ||
+                                     analysis.category == MistralApiClient.MessageCategory.GREETING_WITH_STATE
+
+                    val shouldActuallyRespond = isGreeting || pseudoMentioned || isActiveConversation
+
+                    if (!shouldActuallyRespond) {
+                        logger.info("Question ignoree (pseudo non mentionne, pas de conversation active): $message")
+                        return@thenAccept
+                    }
+
                     logger.info("Message classifie: ${analysis.category} - $message (${analysis.reason})")
 
                     // ETAPE 2: Generation de reponse avec la categorie
