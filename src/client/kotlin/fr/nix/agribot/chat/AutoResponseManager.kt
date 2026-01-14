@@ -161,6 +161,7 @@ object AutoResponseManager {
 
     /**
      * Traite un message de test (mode test actif).
+     * Utilise le systeme a 2 etapes: Classification -> Generation
      * @param message Le message a analyser
      * @param sender Le pseudo de l'expediteur (utilise pour le contexte)
      */
@@ -168,7 +169,7 @@ object AutoResponseManager {
         val config = AutoResponseConfig.get()
         val playerName = getPlayerUsername()
 
-        logger.info("[MODE TEST] ------------------------------------")
+        logger.info("[MODE TEST] ====================================")
         logger.info("[MODE TEST] Expediteur: $sender")
         logger.info("[MODE TEST] Joueur (bot): $playerName")
         logger.info("[MODE TEST] Message: \"$message\"")
@@ -192,25 +193,24 @@ object AutoResponseManager {
             return
         }
 
-        logger.info("[MODE TEST] Envoi a l'API Mistral pour analyse...")
-        logger.info("[MODE TEST] Question: Ce message est-il adresse a $playerName ?")
+        logger.info("[MODE TEST] ------------------------------------")
+        logger.info("[MODE TEST] ETAPE 1: CLASSIFICATION")
 
         MistralApiClient.analyzeMessage(message, playerName, sender)
             .thenAccept { analysis ->
-                logger.info("[MODE TEST] ------------------------------------")
-                logger.info("[MODE TEST] RESULTAT ANALYSE:")
+                logger.info("[MODE TEST] -> Categorie: ${analysis.category}")
                 logger.info("[MODE TEST] -> Doit repondre: ${if (analysis.shouldRespond) "OUI" else "NON"}")
                 logger.info("[MODE TEST] -> Raison: ${analysis.reason}")
 
                 if (analysis.shouldRespond) {
                     logger.info("[MODE TEST] ------------------------------------")
-                    logger.info("[MODE TEST] Generation de la reponse...")
+                    logger.info("[MODE TEST] ETAPE 2: GENERATION (categorie: ${analysis.category})")
 
-                    // Generer la reponse
-                    MistralApiClient.generateResponse(message, sender, playerName)
+                    // Generer la reponse avec la categorie
+                    MistralApiClient.generateResponse(message, sender, playerName, analysis.category)
                         .thenAccept { response ->
                             logger.info("[MODE TEST] ------------------------------------")
-                            logger.info("[MODE TEST] RESULTAT GENERATION:")
+                            logger.info("[MODE TEST] RESULTAT:")
                             if (response.isNotEmpty()) {
                                 val typingDelay = calculateTypingDelay(response)
                                 logger.info("[MODE TEST] -> Reponse generee: \"$response\"")
@@ -285,6 +285,7 @@ object AutoResponseManager {
 
     /**
      * Analyse un message avec l'API Mistral et repond si necessaire.
+     * Utilise le systeme a 2 etapes: Classification -> Generation
      */
     private fun analyzeAndRespond(sender: String, message: String, playerName: String) {
         val config = AutoResponseConfig.get()
@@ -294,17 +295,18 @@ object AutoResponseManager {
             return
         }
 
+        // ETAPE 1: Classification du message
         MistralApiClient.analyzeMessage(message, playerName, sender)
             .thenAccept { analysis ->
                 if (analysis.shouldRespond) {
-                    logger.info("Message detecte comme adresse au joueur: $message (${analysis.reason})")
+                    logger.info("Message classifie: ${analysis.category} - $message (${analysis.reason})")
 
-                    // Generer et envoyer la reponse
-                    MistralApiClient.generateResponse(message, sender, playerName)
+                    // ETAPE 2: Generation de reponse avec la categorie
+                    MistralApiClient.generateResponse(message, sender, playerName, analysis.category)
                         .thenAccept { response ->
                             if (response.isNotEmpty()) {
                                 scheduleResponse(response)
-                                logger.info("Reponse programmee: $response")
+                                logger.info("Reponse programmee [${analysis.category}]: $response")
                             }
                         }
                 } else {

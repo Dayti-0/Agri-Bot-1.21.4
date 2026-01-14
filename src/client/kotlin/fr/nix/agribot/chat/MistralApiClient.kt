@@ -11,8 +11,9 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executors
 
 /**
- * Client pour l'API Mistral.
- * Permet de detecter si un message necessite une reponse et de generer des reponses.
+ * Client pour l'API Mistral avec systeme de classification a 2 etapes.
+ * Etape 1: Classification du type de message
+ * Etape 2: Generation de reponse adaptee a la categorie
  */
 object MistralApiClient {
     private val logger = LoggerFactory.getLogger("agribot")
@@ -23,84 +24,96 @@ object MistralApiClient {
     private const val MODEL = "mistral-small-latest"
 
     /**
-     * Resultat de l'analyse d'un message.
+     * Categories de messages detectables.
+     */
+    enum class MessageCategory {
+        GREETING,           // Salutation simple (yo, salut, wesh, hey)
+        GREETING_WITH_STATE,// Salutation avec question d'etat (ca va, cv)
+        QUESTION_COMMERCIAL,// Question commerciale (t'as X a vendre, tu veux acheter)
+        INVITATION,         // Invitation a faire quelque chose (tu veux farmer, viens pvp)
+        QUESTION_HELP,      // Demande d'aide (tu peux m'aider, t'as une sec)
+        QUESTION_LOCATION,  // Question de localisation (t'es ou, tu fais quoi)
+        IGNORE              // Message a ignorer (pas adresse au joueur)
+    }
+
+    /**
+     * Resultat de l'analyse d'un message (etape 1).
      */
     data class MessageAnalysis(
         val shouldRespond: Boolean,
+        val category: MessageCategory,
         val reason: String
     )
 
     /**
-     * Analyse un message pour determiner si le bot doit y repondre.
-     * @param message Le message du chat a analyser
-     * @param playerUsername Le pseudo du joueur (bot)
-     * @param senderName Le nom de l'expediteur du message
-     * @return CompletableFuture avec le resultat de l'analyse
+     * ETAPE 1: Analyse et classifie un message.
+     * Determine la categorie du message pour adapter la reponse.
      */
     fun analyzeMessage(message: String, playerUsername: String, senderName: String): CompletableFuture<MessageAnalysis> {
         return CompletableFuture.supplyAsync({
             try {
                 val config = AutoResponseConfig.get()
                 if (!config.isApiConfigured()) {
-                    return@supplyAsync MessageAnalysis(false, "API non configuree")
+                    return@supplyAsync MessageAnalysis(false, MessageCategory.IGNORE, "API non configuree")
                 }
 
-                val systemPrompt = """Tu es un assistant qui analyse les messages de chat dans un jeu Minecraft multijoueur.
-Tu dois determiner si un message est adresse au joueur "$playerUsername" ou s'il merite une reponse.
+                val systemPrompt = """Tu es un classificateur de messages pour un bot Minecraft AFK.
+Tu dois analyser les messages du chat et les classifier en categories.
 
-Un message DOIT recevoir une reponse SI:
-- Il contient le pseudo "$playerUsername" (ou une variante proche)
-- C'est une salutation simple sans destinataire specifique (yo, wesh, wsh, salut, hey, cc, coucou, hello, slt)
-- Il est clairement adresse au joueur (ex: "salut toi", "oh le boss est la", "wesh t'es la")
-- C'est une question directe ou une demande d'attention (ex: "ca va ?", "cv", "t'es la ?")
+Le joueur bot s'appelle "$playerUsername". Analyse le message de "$senderName".
 
-Un message NE DOIT PAS recevoir de reponse SI:
-- C'est une question generale avec "qui" (ex: "qui veut pvp ?", "qui a des diamonds ?")
-- C'est un message adresse a quelqu'un d'autre par son pseudo (ex: "Redstone tu peux venir", "Admin tu es la ?")
-- C'est un commentaire/reaction general (ex: "mdr", "gg", "lol", "le serveur lag")
-- C'est une annonce a tout le monde (ex: "cc tout le monde", "bonsoir a tous")
+CATEGORIES (reponds avec le code EXACT):
+- GREETING : Salutation simple sans question (yo, salut, wesh, hey, cc, slt, coucou)
+- GREETING_WITH_STATE : Salutation AVEC question sur l'etat (ca va, cv, cv?, comment ca va, ca va ou quoi)
+- QUESTION_COMMERCIAL : Question d'achat/vente (t'as X a vendre, tu veux acheter, tu vends, t'as du X)
+- INVITATION : Invitation a faire quelque chose (tu veux farmer, viens pvp, on fait X, tu viens)
+- QUESTION_HELP : Demande d'aide (tu peux m'aider, t'as une minute, j'ai besoin de toi)
+- QUESTION_LOCATION : Question de localisation/activite (t'es ou, tu fais quoi, t'es la)
+- IGNORE : Message PAS adresse a $playerUsername (contient un AUTRE pseudo, question avec "qui", annonce generale)
 
-IMPORTANT: Une salutation simple comme "yo", "wesh", "salut" SANS autre pseudo mentionne = OUI (on repond)
+REGLES IMPORTANTES:
+1. Si le message contient le pseudo "$playerUsername" ou est une salutation sans autre pseudo = PAS IGNORE
+2. Si le message mentionne un AUTRE pseudo specifique = IGNORE
+3. "qui veut...", "qui a...", "quelqu'un peut..." = IGNORE (question generale)
+4. "cc all", "salut tout le monde" = IGNORE (message collectif)
 
-Reponds UNIQUEMENT par "OUI" si le message necessite une reponse, ou "NON" sinon.
-Ajoute une courte explication apres un tiret."""
+Reponds UNIQUEMENT avec: CATEGORIE - courte explication
+Exemple: GREETING_WITH_STATE - salutation avec question ca va"""
 
-                val userPrompt = "Message de $senderName: \"$message\"\n\nCe message est-il adresse a $playerUsername ?"
+                val userPrompt = "Message de $senderName: \"$message\""
 
-                // Log pour debug
                 if (config.testModeActive) {
-                    logger.info("[API MISTRAL] Analyse - Prompt systeme:")
-                    logger.info("[API MISTRAL] $systemPrompt")
-                    logger.info("[API MISTRAL] Analyse - Prompt utilisateur:")
-                    logger.info("[API MISTRAL] $userPrompt")
+                    logger.info("[ETAPE 1 - CLASSIFICATION]")
+                    logger.info("[API] Message a analyser: \"$message\"")
                 }
 
                 val response = callMistralApi(config.mistralApiKey, systemPrompt, userPrompt)
 
-                // Log de la reponse brute
                 if (config.testModeActive) {
-                    logger.info("[API MISTRAL] Reponse brute: \"$response\"")
+                    logger.info("[API] Reponse classification: \"$response\"")
                 }
 
-                val shouldRespond = response.uppercase().startsWith("OUI")
+                // Parser la reponse
+                val category = parseCategory(response)
                 val reason = if (response.contains("-")) response.substringAfter("-").trim() else response
+                val shouldRespond = category != MessageCategory.IGNORE
 
-                MessageAnalysis(shouldRespond, reason)
+                if (config.testModeActive) {
+                    logger.info("[API] Categorie: $category, Doit repondre: $shouldRespond")
+                }
+
+                MessageAnalysis(shouldRespond, category, reason)
             } catch (e: Exception) {
-                logger.error("Erreur lors de l'analyse du message: ${e.message}")
-                MessageAnalysis(false, "Erreur: ${e.message}")
+                logger.error("Erreur lors de la classification: ${e.message}")
+                MessageAnalysis(false, MessageCategory.IGNORE, "Erreur: ${e.message}")
             }
         }, executor)
     }
 
     /**
-     * Genere une reponse a un message.
-     * @param originalMessage Le message original auquel repondre
-     * @param senderName Le nom de l'expediteur
-     * @param playerUsername Le pseudo du joueur (bot)
-     * @return CompletableFuture avec la reponse generee
+     * ETAPE 2: Genere une reponse adaptee a la categorie du message.
      */
-    fun generateResponse(originalMessage: String, senderName: String, playerUsername: String): CompletableFuture<String> {
+    fun generateResponse(originalMessage: String, senderName: String, playerUsername: String, category: MessageCategory = MessageCategory.GREETING): CompletableFuture<String> {
         return CompletableFuture.supplyAsync({
             try {
                 val config = AutoResponseConfig.get()
@@ -108,63 +121,153 @@ Ajoute une courte explication apres un tiret."""
                     return@supplyAsync ""
                 }
 
-                val systemPrompt = """Tu es un joueur Minecraft qui repond aux messages dans le chat.
-Tu dois generer une reponse TRES COURTE et naturelle, comme un vrai joueur.
+                val systemPrompt = buildResponsePrompt(playerUsername, category)
+                val userPrompt = "Message de $senderName: \"$originalMessage\"\n\nGenere ta reponse:"
 
-Regles STRICTES:
-- Reponse MAXIMUM 1-3 mots (idealement 1-2 mots)
-- Utilise un langage familier de joueur (yo, wesh, salut, cv, trql, etc.)
-- Ne mets PAS de ponctuation excessive
-- Ne sois PAS trop poli ou formel
-- Adapte-toi au style du message recu
-
-Exemples:
-- "Salut Dayti !" -> "yo" ou "salut"
-- "wesh Dayti" -> "wesh"
-- "Ca va ?" ou "cv?" -> "trql et toi" ou "bien et toi"
-- "oh le boss est la" -> "yo" ou "present"
-- "hey Dayti !" -> "hey"
-- "Yo Dayti Ca va ou quoi ?" -> "trql et toi"
-
-Tu joues le role de $playerUsername. Reponds UNIQUEMENT avec le message a envoyer, rien d'autre."""
-
-                val userPrompt = "Message de $senderName: \"$originalMessage\"\n\nGenere une reponse courte:"
-
-                // Log pour debug
                 if (config.testModeActive) {
-                    logger.info("[API MISTRAL] Generation - Prompt systeme:")
-                    logger.info("[API MISTRAL] $systemPrompt")
-                    logger.info("[API MISTRAL] Generation - Prompt utilisateur:")
-                    logger.info("[API MISTRAL] $userPrompt")
+                    logger.info("[ETAPE 2 - GENERATION]")
+                    logger.info("[API] Categorie: $category")
+                    logger.info("[API] Prompt systeme: ${systemPrompt.take(200)}...")
                 }
 
                 val response = callMistralApi(config.mistralApiKey, systemPrompt, userPrompt)
 
-                // Log de la reponse brute
                 if (config.testModeActive) {
-                    logger.info("[API MISTRAL] Reponse brute generation: \"$response\"")
+                    logger.info("[API] Reponse brute: \"$response\"")
                 }
 
-                // Nettoyer la reponse (enlever guillemets potentiels, limiter la longueur)
+                // Nettoyer la reponse
                 var cleanResponse = response.trim()
                     .removePrefix("\"").removeSuffix("\"")
                     .removePrefix("'").removeSuffix("'")
+                    .replace(Regex("^(Reponse|Message)\\s*:\\s*", RegexOption.IGNORE_CASE), "")
 
-                // Limiter a 50 caracteres max pour le chat Minecraft
+                // Limiter a 50 caracteres max
                 if (cleanResponse.length > 50) {
                     cleanResponse = cleanResponse.substring(0, 50)
                 }
 
                 if (config.testModeActive) {
-                    logger.info("[API MISTRAL] Reponse nettoyee: \"$cleanResponse\"")
+                    logger.info("[API] Reponse finale: \"$cleanResponse\"")
                 }
 
                 cleanResponse
             } catch (e: Exception) {
-                logger.error("Erreur lors de la generation de reponse: ${e.message}")
+                logger.error("Erreur lors de la generation: ${e.message}")
                 ""
             }
         }, executor)
+    }
+
+    /**
+     * Construit le prompt de generation selon la categorie.
+     * C'est ici que la "magie" opère - chaque categorie a un comportement different.
+     */
+    private fun buildResponsePrompt(playerUsername: String, category: MessageCategory): String {
+        val baseRules = """Tu es $playerUsername, un joueur Minecraft qui est AFK (occupe).
+Tu dois generer une reponse TRES COURTE (1-5 mots max).
+Style: langage familier de joueur (yo, wesh, trql, dsl, nn, etc.)
+JAMAIS de ponctuation excessive. JAMAIS formel."""
+
+        return when (category) {
+            MessageCategory.GREETING -> """$baseRules
+
+CONTEXTE: C'est une SALUTATION simple.
+OBJECTIF: Repondre amicalement mais brievement.
+
+Exemples de reponses:
+- "salut Dayti" -> "yo" ou "salut"
+- "wesh" -> "wesh"
+- "hey Dayti" -> "hey" ou "yo"
+- "cc" -> "cc" ou "yo"
+- "coucou" -> "salut"
+
+Reponds UNIQUEMENT avec le message (1-2 mots)."""
+
+            MessageCategory.GREETING_WITH_STATE -> """$baseRules
+
+CONTEXTE: C'est une salutation AVEC question sur ton etat (ca va, cv).
+OBJECTIF: Repondre positivement ET retourner la question.
+
+Exemples de reponses:
+- "ca va ?" -> "oui et toi" ou "ca va et toi"
+- "cv?" -> "oui toi" ou "bien et toi"
+- "wesh ca va" -> "trql et toi"
+- "yo ca va ou quoi" -> "tranquille toi"
+- "salut cv" -> "yo ca va toi"
+
+IMPORTANT: Tu dois TOUJOURS inclure "et toi" ou "toi" a la fin!
+Reponds UNIQUEMENT avec le message (2-4 mots)."""
+
+            MessageCategory.QUESTION_COMMERCIAL -> """$baseRules
+
+CONTEXTE: C'est une question COMMERCIALE (achat/vente).
+OBJECTIF: REFUSER poliment. Tu n'as rien a vendre, tu ne veux rien acheter.
+
+Exemples de reponses:
+- "t'as du bois a vendre?" -> "nn dsl j'ai pas"
+- "tu vends des diamonds?" -> "non dsl"
+- "tu veux acheter du fer?" -> "nn merci"
+- "t'aurais de la stone?" -> "dsl j'en ai pas"
+
+Reponds UNIQUEMENT avec le message (2-4 mots). Toujours negatif/refus."""
+
+            MessageCategory.INVITATION -> """$baseRules
+
+CONTEXTE: C'est une INVITATION a faire quelque chose.
+OBJECTIF: REFUSER poliment. Tu es occupe/AFK.
+
+Exemples de reponses:
+- "tu veux farmer avec moi?" -> "nn dsl jsuis occupe"
+- "viens pvp" -> "pas maintenant dsl"
+- "on fait un donjon?" -> "nn je peux pas la"
+- "tu viens spawn?" -> "dsl jsuis afk"
+
+Reponds UNIQUEMENT avec le message (2-4 mots). Toujours refuser poliment."""
+
+            MessageCategory.QUESTION_HELP -> """$baseRules
+
+CONTEXTE: C'est une DEMANDE D'AIDE.
+OBJECTIF: REFUSER poliment. Tu ne peux pas aider maintenant.
+
+Exemples de reponses:
+- "tu peux m'aider?" -> "dsl je peux pas la"
+- "t'as 2 sec?" -> "nn dsl jsuis occupe"
+- "j'ai besoin d'aide" -> "dsl pas dispo"
+
+Reponds UNIQUEMENT avec le message (2-4 mots). Toujours refuser poliment."""
+
+            MessageCategory.QUESTION_LOCATION -> """$baseRules
+
+CONTEXTE: Question sur ta localisation ou activite.
+OBJECTIF: Repondre vaguement, tu es occupe.
+
+Exemples de reponses:
+- "t'es ou?" -> "jsuis occupe la"
+- "tu fais quoi?" -> "des trucs"
+- "t'es la?" -> "oui mais afk"
+
+Reponds UNIQUEMENT avec le message (2-3 mots). Rester vague."""
+
+            MessageCategory.IGNORE -> """$baseRules
+Ne reponds pas, ce message n'est pas pour toi."""
+        }
+    }
+
+    /**
+     * Parse la categorie depuis la reponse de l'API.
+     */
+    private fun parseCategory(response: String): MessageCategory {
+        val upperResponse = response.uppercase()
+        return when {
+            upperResponse.startsWith("GREETING_WITH_STATE") -> MessageCategory.GREETING_WITH_STATE
+            upperResponse.startsWith("GREETING") -> MessageCategory.GREETING
+            upperResponse.startsWith("QUESTION_COMMERCIAL") -> MessageCategory.QUESTION_COMMERCIAL
+            upperResponse.startsWith("INVITATION") -> MessageCategory.INVITATION
+            upperResponse.startsWith("QUESTION_HELP") -> MessageCategory.QUESTION_HELP
+            upperResponse.startsWith("QUESTION_LOCATION") -> MessageCategory.QUESTION_LOCATION
+            else -> MessageCategory.IGNORE
+        }
     }
 
     /**
@@ -182,7 +285,6 @@ Tu joues le role de $playerUsername. Reponds UNIQUEMENT avec le message a envoye
             connection.connectTimeout = 10000
             connection.readTimeout = 30000
 
-            // Construire le body JSON
             val requestBody = JsonObject().apply {
                 addProperty("model", MODEL)
                 add("messages", com.google.gson.JsonArray().apply {
