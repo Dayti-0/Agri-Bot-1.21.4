@@ -24,10 +24,14 @@ object AutoResponseManager {
     private val DIACRITICS_PATTERN = "\\p{InCombiningDiacriticalMarks}+".toRegex()
 
     // Regex pour parser les messages de chat du serveur
-    // Format: [niveau] 《Guilde》Pseudo★ » Message
-    // ou: [niveau] Pseudo » Message
-    // ou: [Admin] Pseudo » Message
-    private val CHAT_MESSAGE_REGEX = Regex("""^\[.*?\]\s*(?:《[^》]+》)?([^\s★☆⚡☠🌙✨🔥❄☢⭐»]+)[^\s»]*\s*»\s*(.+)$""")
+    // Capture le pseudo (commençant par une lettre) juste avant le separateur »
+    // Fonctionne avec tous les formats:
+    // - [niveau] 《Guilde》Pseudo★ » Message
+    // - [niveau] Pseudo » Message
+    // - [Admin] Pseudo » Message
+    // - ShopDeGott Pseudo » Message (format shop sans crochets)
+    // - Pseudo » Message (format simple)
+    private val CHAT_MESSAGE_REGEX = Regex("""([A-Za-z_][A-Za-z0-9_]*)[★☆⚡☠🌙✨🔥❄☢⭐]*\s*»\s*(.+)$""")
 
     // Regex pour parser les messages de chat en mode solo/local
     // Format: < Pseudo> Message ou <Pseudo> Message
@@ -54,6 +58,14 @@ object AutoResponseManager {
     // Delai minimum avant de commencer a taper (reaction humaine)
     private const val REACTION_DELAY_MIN_MS = 800
     private const val REACTION_DELAY_MAX_MS = 2500
+
+    // ============================================
+    // SYSTEME DE CONTEXTE CONVERSATIONNEL
+    // ============================================
+    // Track les conversations actives: sender -> timestamp du dernier echange
+    private val activeConversations = mutableMapOf<String, Long>()
+    // Duree pendant laquelle une conversation reste active (30 secondes)
+    private const val CONVERSATION_TIMEOUT_MS = 30_000L
 
     /**
      * Initialise le gestionnaire.
@@ -157,6 +169,7 @@ object AutoResponseManager {
 
     /**
      * Traite un message de test (mode test actif).
+     * Utilise le systeme a 2 etapes: Classification -> Generation
      * @param message Le message a analyser
      * @param sender Le pseudo de l'expediteur (utilise pour le contexte)
      */
@@ -164,7 +177,7 @@ object AutoResponseManager {
         val config = AutoResponseConfig.get()
         val playerName = getPlayerUsername()
 
-        logger.info("[MODE TEST] ------------------------------------")
+        logger.info("[MODE TEST] ====================================")
         logger.info("[MODE TEST] Expediteur: $sender")
         logger.info("[MODE TEST] Joueur (bot): $playerName")
         logger.info("[MODE TEST] Message: \"$message\"")
@@ -188,31 +201,36 @@ object AutoResponseManager {
             return
         }
 
-        logger.info("[MODE TEST] Envoi a l'API Mistral pour analyse...")
-        logger.info("[MODE TEST] Question: Ce message est-il adresse a $playerName ?")
+        // Verifier si on a une conversation active avec cet expediteur
+        val isActiveConversation = hasActiveConversation(sender)
+        logger.info("[MODE TEST] Conversation active: $isActiveConversation")
 
-        MistralApiClient.analyzeMessage(message, playerName, sender)
+        logger.info("[MODE TEST] ------------------------------------")
+        logger.info("[MODE TEST] ETAPE 1: CLASSIFICATION")
+
+        MistralApiClient.analyzeMessage(message, playerName, sender, isActiveConversation)
             .thenAccept { analysis ->
-                logger.info("[MODE TEST] ------------------------------------")
-                logger.info("[MODE TEST] RESULTAT ANALYSE:")
+                logger.info("[MODE TEST] -> Categorie: ${analysis.category}")
                 logger.info("[MODE TEST] -> Doit repondre: ${if (analysis.shouldRespond) "OUI" else "NON"}")
                 logger.info("[MODE TEST] -> Raison: ${analysis.reason}")
 
                 if (analysis.shouldRespond) {
                     logger.info("[MODE TEST] ------------------------------------")
-                    logger.info("[MODE TEST] Generation de la reponse...")
+                    logger.info("[MODE TEST] ETAPE 2: GENERATION (categorie: ${analysis.category})")
 
-                    // Generer la reponse
-                    MistralApiClient.generateResponse(message, sender, playerName)
+                    // Generer la reponse avec la categorie
+                    MistralApiClient.generateResponse(message, sender, playerName, analysis.category)
                         .thenAccept { response ->
                             logger.info("[MODE TEST] ------------------------------------")
-                            logger.info("[MODE TEST] RESULTAT GENERATION:")
+                            logger.info("[MODE TEST] RESULTAT:")
                             if (response.isNotEmpty()) {
                                 val typingDelay = calculateTypingDelay(response)
                                 logger.info("[MODE TEST] -> Reponse generee: \"$response\"")
                                 logger.info("[MODE TEST] -> Delai de frappe simule: ${typingDelay}ms")
                                 // Envoyer vraiment la reponse dans le chat (conditions reelles)
                                 scheduleResponse(response)
+                                // Marquer la conversation comme active
+                                markConversationActive(sender)
                                 logger.info("[MODE TEST] -> Message programme pour envoi!")
                             } else {
                                 logger.error("[MODE TEST] -> ERREUR: Reponse vide generee")
@@ -281,6 +299,8 @@ object AutoResponseManager {
 
     /**
      * Analyse un message avec l'API Mistral et repond si necessaire.
+     * Utilise le systeme a 2 etapes: Classification -> Generation
+     * Prend en compte le contexte conversationnel (conversations actives).
      */
     private fun analyzeAndRespond(sender: String, message: String, playerName: String) {
         val config = AutoResponseConfig.get()
@@ -290,17 +310,26 @@ object AutoResponseManager {
             return
         }
 
-        MistralApiClient.analyzeMessage(message, playerName, sender)
+        // Verifier si on a une conversation active avec cet expediteur
+        val isActiveConversation = hasActiveConversation(sender)
+        if (isActiveConversation) {
+            logger.info("Conversation active detectee avec $sender")
+        }
+
+        // ETAPE 1: Classification du message (avec contexte conversationnel)
+        MistralApiClient.analyzeMessage(message, playerName, sender, isActiveConversation)
             .thenAccept { analysis ->
                 if (analysis.shouldRespond) {
-                    logger.info("Message detecte comme adresse au joueur: $message (${analysis.reason})")
+                    logger.info("Message classifie: ${analysis.category} - $message (${analysis.reason})")
 
-                    // Generer et envoyer la reponse
-                    MistralApiClient.generateResponse(message, sender, playerName)
+                    // ETAPE 2: Generation de reponse avec la categorie
+                    MistralApiClient.generateResponse(message, sender, playerName, analysis.category)
                         .thenAccept { response ->
                             if (response.isNotEmpty()) {
                                 scheduleResponse(response)
-                                logger.info("Reponse programmee: $response")
+                                // Marquer la conversation comme active apres avoir repondu
+                                markConversationActive(sender)
+                                logger.info("Reponse programmee [${analysis.category}]: $response")
                             }
                         }
                 } else {
@@ -402,11 +431,12 @@ object AutoResponseManager {
         message = message.replace(Regex("§[0-9a-fk-or]"), "")
 
         // 1. Parser le format du serveur multijoueur
-        // Format: [niveau] 《Guilde》Pseudo★ » Message
+        // Capture le pseudo (commençant par une lettre) juste avant »
         val serverMatch = CHAT_MESSAGE_REGEX.find(message)
         if (serverMatch != null) {
             val sender = serverMatch.groupValues[1].trim()
             val content = serverMatch.groupValues[2].trim()
+            logger.debug("Message parse: sender='$sender', content='$content' (raw: '$message')")
             return ChatContent(sender, content)
         }
 
@@ -416,7 +446,13 @@ object AutoResponseManager {
         if (soloMatch != null) {
             val sender = soloMatch.groupValues[1].trim()
             val content = soloMatch.groupValues[2].trim()
+            logger.debug("Message solo parse: sender='$sender', content='$content'")
             return ChatContent(sender, content)
+        }
+
+        // Log si le message contient » mais n'a pas ete parse (potentiel bug)
+        if (message.contains("»")) {
+            logger.debug("Message avec » non parse: '$message'")
         }
 
         return null
@@ -483,6 +519,43 @@ object AutoResponseManager {
         setTestMode(!AutoResponseConfig.get().testModeActive)
     }
 
+    // ============================================
+    // GESTION DES CONVERSATIONS ACTIVES
+    // ============================================
+
+    /**
+     * Verifie si on a une conversation active avec un joueur.
+     * Une conversation est active si on a echange avec ce joueur dans les 30 dernieres secondes.
+     */
+    private fun hasActiveConversation(sender: String): Boolean {
+        val normalizedSender = normalizeText(sender)
+        val lastInteraction = activeConversations[normalizedSender] ?: return false
+        val elapsed = System.currentTimeMillis() - lastInteraction
+        return elapsed < CONVERSATION_TIMEOUT_MS
+    }
+
+    /**
+     * Marque une conversation comme active (apres avoir repondu).
+     */
+    private fun markConversationActive(sender: String) {
+        val normalizedSender = normalizeText(sender)
+        activeConversations[normalizedSender] = System.currentTimeMillis()
+        logger.debug("Conversation active avec $sender")
+
+        // Nettoyer les vieilles conversations
+        cleanupOldConversations()
+    }
+
+    /**
+     * Nettoie les conversations expirees.
+     */
+    private fun cleanupOldConversations() {
+        val now = System.currentTimeMillis()
+        activeConversations.entries.removeIf { (_, timestamp) ->
+            now - timestamp > CONVERSATION_TIMEOUT_MS
+        }
+    }
+
     /**
      * Reset le gestionnaire (par exemple lors de la deconnexion).
      */
@@ -490,5 +563,6 @@ object AutoResponseManager {
         connectionTimestamp = 0
         pendingResponses.clear()
         processedMessages.clear()
+        activeConversations.clear()
     }
 }
