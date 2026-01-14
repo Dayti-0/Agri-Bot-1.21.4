@@ -59,6 +59,14 @@ object AutoResponseManager {
     private const val REACTION_DELAY_MIN_MS = 800
     private const val REACTION_DELAY_MAX_MS = 2500
 
+    // ============================================
+    // SYSTEME DE CONTEXTE CONVERSATIONNEL
+    // ============================================
+    // Track les conversations actives: sender -> timestamp du dernier echange
+    private val activeConversations = mutableMapOf<String, Long>()
+    // Duree pendant laquelle une conversation reste active (30 secondes)
+    private const val CONVERSATION_TIMEOUT_MS = 30_000L
+
     /**
      * Initialise le gestionnaire.
      */
@@ -193,10 +201,14 @@ object AutoResponseManager {
             return
         }
 
+        // Verifier si on a une conversation active avec cet expediteur
+        val isActiveConversation = hasActiveConversation(sender)
+        logger.info("[MODE TEST] Conversation active: $isActiveConversation")
+
         logger.info("[MODE TEST] ------------------------------------")
         logger.info("[MODE TEST] ETAPE 1: CLASSIFICATION")
 
-        MistralApiClient.analyzeMessage(message, playerName, sender)
+        MistralApiClient.analyzeMessage(message, playerName, sender, isActiveConversation)
             .thenAccept { analysis ->
                 logger.info("[MODE TEST] -> Categorie: ${analysis.category}")
                 logger.info("[MODE TEST] -> Doit repondre: ${if (analysis.shouldRespond) "OUI" else "NON"}")
@@ -217,6 +229,8 @@ object AutoResponseManager {
                                 logger.info("[MODE TEST] -> Delai de frappe simule: ${typingDelay}ms")
                                 // Envoyer vraiment la reponse dans le chat (conditions reelles)
                                 scheduleResponse(response)
+                                // Marquer la conversation comme active
+                                markConversationActive(sender)
                                 logger.info("[MODE TEST] -> Message programme pour envoi!")
                             } else {
                                 logger.error("[MODE TEST] -> ERREUR: Reponse vide generee")
@@ -286,6 +300,7 @@ object AutoResponseManager {
     /**
      * Analyse un message avec l'API Mistral et repond si necessaire.
      * Utilise le systeme a 2 etapes: Classification -> Generation
+     * Prend en compte le contexte conversationnel (conversations actives).
      */
     private fun analyzeAndRespond(sender: String, message: String, playerName: String) {
         val config = AutoResponseConfig.get()
@@ -295,8 +310,14 @@ object AutoResponseManager {
             return
         }
 
-        // ETAPE 1: Classification du message
-        MistralApiClient.analyzeMessage(message, playerName, sender)
+        // Verifier si on a une conversation active avec cet expediteur
+        val isActiveConversation = hasActiveConversation(sender)
+        if (isActiveConversation) {
+            logger.info("Conversation active detectee avec $sender")
+        }
+
+        // ETAPE 1: Classification du message (avec contexte conversationnel)
+        MistralApiClient.analyzeMessage(message, playerName, sender, isActiveConversation)
             .thenAccept { analysis ->
                 if (analysis.shouldRespond) {
                     logger.info("Message classifie: ${analysis.category} - $message (${analysis.reason})")
@@ -306,6 +327,8 @@ object AutoResponseManager {
                         .thenAccept { response ->
                             if (response.isNotEmpty()) {
                                 scheduleResponse(response)
+                                // Marquer la conversation comme active apres avoir repondu
+                                markConversationActive(sender)
                                 logger.info("Reponse programmee [${analysis.category}]: $response")
                             }
                         }
@@ -496,6 +519,43 @@ object AutoResponseManager {
         setTestMode(!AutoResponseConfig.get().testModeActive)
     }
 
+    // ============================================
+    // GESTION DES CONVERSATIONS ACTIVES
+    // ============================================
+
+    /**
+     * Verifie si on a une conversation active avec un joueur.
+     * Une conversation est active si on a echange avec ce joueur dans les 30 dernieres secondes.
+     */
+    private fun hasActiveConversation(sender: String): Boolean {
+        val normalizedSender = normalizeText(sender)
+        val lastInteraction = activeConversations[normalizedSender] ?: return false
+        val elapsed = System.currentTimeMillis() - lastInteraction
+        return elapsed < CONVERSATION_TIMEOUT_MS
+    }
+
+    /**
+     * Marque une conversation comme active (apres avoir repondu).
+     */
+    private fun markConversationActive(sender: String) {
+        val normalizedSender = normalizeText(sender)
+        activeConversations[normalizedSender] = System.currentTimeMillis()
+        logger.debug("Conversation active avec $sender")
+
+        // Nettoyer les vieilles conversations
+        cleanupOldConversations()
+    }
+
+    /**
+     * Nettoie les conversations expirees.
+     */
+    private fun cleanupOldConversations() {
+        val now = System.currentTimeMillis()
+        activeConversations.entries.removeIf { (_, timestamp) ->
+            now - timestamp > CONVERSATION_TIMEOUT_MS
+        }
+    }
+
     /**
      * Reset le gestionnaire (par exemple lors de la deconnexion).
      */
@@ -503,5 +563,6 @@ object AutoResponseManager {
         connectionTimestamp = 0
         pendingResponses.clear()
         processedMessages.clear()
+        activeConversations.clear()
     }
 }

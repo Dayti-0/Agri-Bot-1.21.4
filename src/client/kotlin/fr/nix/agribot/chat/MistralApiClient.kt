@@ -48,8 +48,9 @@ object MistralApiClient {
     /**
      * ETAPE 1: Analyse et classifie un message.
      * Determine la categorie du message pour adapter la reponse.
+     * @param hasActiveConversation Si true, on a deja echange avec ce joueur recemment
      */
-    fun analyzeMessage(message: String, playerUsername: String, senderName: String): CompletableFuture<MessageAnalysis> {
+    fun analyzeMessage(message: String, playerUsername: String, senderName: String, hasActiveConversation: Boolean = false): CompletableFuture<MessageAnalysis> {
         return CompletableFuture.supplyAsync({
             try {
                 val config = AutoResponseConfig.get()
@@ -57,25 +58,39 @@ object MistralApiClient {
                     return@supplyAsync MessageAnalysis(false, MessageCategory.IGNORE, "API non configuree")
                 }
 
+                // Construire le contexte conversationnel
+                val conversationContext = if (hasActiveConversation) {
+                    """
+CONTEXTE IMPORTANT: Tu as une CONVERSATION ACTIVE avec $senderName.
+Vous avez echange des messages dans les 30 dernieres secondes.
+Donc meme si le message ne contient pas le pseudo "$playerUsername",
+il est TRES PROBABLEMENT adresse a toi (suite de la conversation).
+Dans ce cas, NE PAS mettre IGNORE sauf si le message mentionne explicitement un AUTRE pseudo."""
+                } else {
+                    ""
+                }
+
                 val systemPrompt = """Tu es un classificateur de messages pour un bot Minecraft AFK.
 Tu dois analyser les messages du chat et les classifier en categories.
 
 Le joueur bot s'appelle "$playerUsername". Analyse le message de "$senderName".
+$conversationContext
 
 CATEGORIES (reponds avec le code EXACT):
 - GREETING : Salutation simple sans question (yo, salut, wesh, hey, cc, slt, coucou)
-- GREETING_WITH_STATE : Salutation AVEC question sur l'etat (ca va, cv, cv?, comment ca va, ca va ou quoi)
+- GREETING_WITH_STATE : Salutation AVEC question sur l'etat (ca va, cv, cv?, comment ca va, ca va ou quoi, tu vas bien)
 - QUESTION_COMMERCIAL : Question d'achat/vente (t'as X a vendre, tu veux acheter, tu vends, t'as du X)
 - INVITATION : Invitation a faire quelque chose (tu veux farmer, viens pvp, on fait X, tu viens)
 - QUESTION_HELP : Demande d'aide (tu peux m'aider, t'as une minute, j'ai besoin de toi)
 - QUESTION_LOCATION : Question de localisation/activite (t'es ou, tu fais quoi, t'es la)
-- IGNORE : Message PAS adresse a $playerUsername (contient un AUTRE pseudo, question avec "qui", annonce generale)
+- IGNORE : Message PAS adresse a $playerUsername (contient un AUTRE pseudo specifique, question avec "qui", annonce generale)
 
 REGLES IMPORTANTES:
-1. Si le message contient le pseudo "$playerUsername" ou est une salutation sans autre pseudo = PAS IGNORE
-2. Si le message mentionne un AUTRE pseudo specifique = IGNORE
-3. "qui veut...", "qui a...", "quelqu'un peut..." = IGNORE (question generale)
-4. "cc all", "salut tout le monde" = IGNORE (message collectif)
+1. Si le message contient le pseudo "$playerUsername" = PAS IGNORE
+2. Si CONVERSATION ACTIVE = le message est probablement pour nous, PAS IGNORE (sauf autre pseudo)
+3. Si le message mentionne un AUTRE pseudo specifique = IGNORE
+4. "qui veut...", "qui a...", "quelqu'un peut..." = IGNORE (question generale)
+5. "cc all", "salut tout le monde" = IGNORE (message collectif)
 
 Reponds UNIQUEMENT avec: CATEGORIE - courte explication
 Exemple: GREETING_WITH_STATE - salutation avec question ca va"""
