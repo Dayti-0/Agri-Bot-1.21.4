@@ -48,9 +48,9 @@ enum class ConnectionState {
     TELEPORTING_MOVEMENT_HOME,
     /** Attente apres teleportation mouvement */
     WAITING_TELEPORT_MOVEMENT,
-    /** Mouvement vers l'avant (2 secondes) */
+    /** Mouvement vers l'avant (1 seconde) */
     MOVING_FORWARD,
-    /** Mouvement vers l'arriere (2 secondes) */
+    /** Mouvement vers l'arriere (1 seconde) */
     MOVING_BACKWARD,
     /** Connexion terminee avec succes */
     CONNECTED,
@@ -496,10 +496,10 @@ object ServerConnector {
     }
 
     private fun handleMovingForward() {
-        // Avancer pendant 2 secondes
+        // Avancer pendant 1 seconde
         waitCounter++
 
-        if (waitCounter >= 40) { // 2 secondes
+        if (waitCounter >= 20) { // 1 seconde
             logger.info("Fin mouvement avant - debut mouvement arriere")
             ActionManager.stopMovingForward()
             ChatManager.showActionBar("Recule...", "6")
@@ -510,10 +510,10 @@ object ServerConnector {
     }
 
     private fun handleMovingBackward() {
-        // Reculer pendant 2 secondes
+        // Reculer pendant 1 seconde
         waitCounter++
 
-        if (waitCounter >= 40) { // 2 secondes
+        if (waitCounter >= 20) { // 1 seconde
             logger.info("Fin mouvement arriere - connexion terminee")
             ActionManager.stopMovingBackward()
             state = ConnectionState.CONNECTED
