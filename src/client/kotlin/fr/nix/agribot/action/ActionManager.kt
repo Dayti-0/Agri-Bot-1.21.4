@@ -637,4 +637,55 @@ object ActionManager {
             logger.debug("Shift+clic slot $slotIndex")
         }
     }
+
+    /**
+     * Prend un item d'un slot source et le depose dans un slot de destination.
+     * Utilise deux clics gauche: un pour prendre, un pour deposer.
+     * Thread-safe: peut etre appele depuis n'importe quel thread.
+     * @param sourceSlot Index du slot source (ou prendre l'item)
+     * @param destinationSlot Index du slot destination (ou deposer l'item)
+     */
+    fun pickAndPlaceSlot(sourceSlot: Int, destinationSlot: Int) {
+        client.execute {
+            val screen = client.currentScreen
+            if (screen !is net.minecraft.client.gui.screen.ingame.HandledScreen<*>) {
+                logger.warn("Aucun menu ouvert pour pick and place")
+                return@execute
+            }
+
+            val handler = screen.screenHandler ?: return@execute
+            val interactionManager = client.interactionManager ?: return@execute
+            val player = client.player ?: return@execute
+
+            // Verifier que les slots existent
+            if (sourceSlot < 0 || sourceSlot >= handler.slots.size) {
+                logger.warn("Index de slot source invalide: $sourceSlot (max: ${handler.slots.size - 1})")
+                return@execute
+            }
+            if (destinationSlot < 0 || destinationSlot >= handler.slots.size) {
+                logger.warn("Index de slot destination invalide: $destinationSlot (max: ${handler.slots.size - 1})")
+                return@execute
+            }
+
+            // Clic gauche sur le slot source pour prendre l'item
+            interactionManager.clickSlot(
+                handler.syncId,
+                sourceSlot,
+                0,  // bouton gauche
+                net.minecraft.screen.slot.SlotActionType.PICKUP,
+                player
+            )
+            logger.debug("Pick item du slot $sourceSlot")
+
+            // Clic gauche sur le slot destination pour deposer l'item
+            interactionManager.clickSlot(
+                handler.syncId,
+                destinationSlot,
+                0,  // bouton gauche
+                net.minecraft.screen.slot.SlotActionType.PICKUP,
+                player
+            )
+            logger.debug("Place item dans slot $destinationSlot")
+        }
+    }
 }

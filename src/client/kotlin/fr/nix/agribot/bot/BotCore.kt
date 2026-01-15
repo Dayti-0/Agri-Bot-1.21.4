@@ -1880,9 +1880,9 @@ object BotCore {
                         return
                     }
 
-                    // Shift-click pour transferer le stack entier
+                    // Transfert cible vers le dernier slot de la hotbar
                     logger.info("Transfert graines du coffre (slot $seedSlot) vers hotbar (slot $hotbarSlot)")
-                    ActionManager.shiftClickSlot(seedSlot)
+                    ActionManager.pickAndPlaceSlot(seedSlot, hotbarSlot)
                     seedStacksMovedToHotbar++
                     wait(8)
                 } else {
@@ -1893,7 +1893,7 @@ object BotCore {
                 }
             }
             5 -> {
-                // Etape 5: Recuperer 5 stacks pour l'inventaire
+                // Etape 5: Recuperer 5 stacks pour l'inventaire principal (pas la hotbar)
                 if (!MenuDetector.isChestOrContainerOpen()) {
                     logger.warn("Coffre graines ferme pendant recuperation inventaire - reouverture")
                     seedFetchingStep = 1
@@ -1912,14 +1912,23 @@ object BotCore {
                         return
                     }
 
-                    // Shift-click pour transferer le stack entier vers l'inventaire
-                    logger.info("Transfert graines du coffre (slot $seedSlot) vers inventaire (${seedStacksMovedToInventory + 1}/$seedStacksForInventory)")
-                    ActionManager.shiftClickSlot(seedSlot)
+                    // Trouver un slot vide dans l'inventaire principal (pas la hotbar)
+                    val invSlot = InventoryManager.findEmptySlotInMainInventoryForSeeds()
+                    if (invSlot < 0) {
+                        logger.warn("Inventaire principal plein - impossible de mettre les graines")
+                        seedFetchingStep = 6
+                        waitMs(300)
+                        return
+                    }
+
+                    // Transfert cible: prendre du coffre et deposer dans l'inventaire principal
+                    logger.info("Transfert graines du coffre (slot $seedSlot) vers inventaire principal (slot $invSlot) (${seedStacksMovedToInventory + 1}/$seedStacksForInventory)")
+                    ActionManager.pickAndPlaceSlot(seedSlot, invSlot)
                     seedStacksMovedToInventory++
                     wait(8)
                 } else {
                     // Inventaire done
-                    logger.info("$seedStacksMovedToInventory stacks de graines transferes vers inventaire")
+                    logger.info("$seedStacksMovedToInventory stacks de graines transferes vers inventaire principal")
                     seedFetchingStep = 6
                     wait(4)
                 }
