@@ -51,6 +51,9 @@ enum class BotState {
     /** Recuperation de seaux depuis le coffre de backup (apres crash) */
     RECOVERING_BUCKETS,
 
+    /** Recuperation de graines depuis le coffre de graines */
+    FETCHING_SEEDS,
+
     /** Fin de session, deconnexion */
     DISCONNECTING,
 

@@ -922,4 +922,282 @@ object InventoryManager {
 
         return false
     }
+
+    // ==================== METHODES POUR LA GESTION DES GRAINES ====================
+
+    /**
+     * Compte le nombre total de graines du type specifie dans la hotbar.
+     * @param seedType Type de graine a chercher (ex: "wheat_seeds")
+     * @return Nombre total de graines dans la hotbar
+     */
+    fun countSeedsInHotbar(seedType: String): Int {
+        val player = client.player ?: return 0
+        val targetItem = seedTypeToItem[seedType] ?: return 0
+
+        var count = 0
+        for (i in 0..8) {
+            val stack = player.inventory.getStack(i)
+            if (!stack.isEmpty && stack.item == targetItem) {
+                count += stack.count
+            }
+        }
+        return count
+    }
+
+    /**
+     * Compte le nombre total de graines du type specifie dans tout l'inventaire.
+     * @param seedType Type de graine a chercher (ex: "wheat_seeds")
+     * @return Nombre total de graines (hotbar + inventaire principal)
+     */
+    fun countSeedsInInventory(seedType: String): Int {
+        val player = client.player ?: return 0
+        val targetItem = seedTypeToItem[seedType] ?: return 0
+
+        var count = 0
+        // Hotbar (0-8) + Inventaire principal (9-35)
+        for (i in 0..35) {
+            val stack = player.inventory.getStack(i)
+            if (!stack.isEmpty && stack.item == targetItem) {
+                count += stack.count
+            }
+        }
+        return count
+    }
+
+    /**
+     * Verifie si le joueur a des graines du type specifie.
+     * @param seedType Type de graine a chercher (ex: "wheat_seeds")
+     * @return true si au moins une graine est presente
+     */
+    fun hasSeeds(seedType: String): Boolean {
+        return countSeedsInInventory(seedType) > 0
+    }
+
+    /**
+     * Verifie si le joueur a des graines dans la hotbar.
+     * @param seedType Type de graine a chercher (ex: "wheat_seeds")
+     * @return true si au moins une graine est presente dans la hotbar
+     */
+    fun hasSeedsInHotbar(seedType: String): Boolean {
+        return countSeedsInHotbar(seedType) > 0
+    }
+
+    /**
+     * Trouve le premier slot contenant des graines dans le coffre (pas l'inventaire joueur).
+     * Thread-safe: peut etre appele depuis n'importe quel thread.
+     * @param seedType Type de graine a chercher
+     * @return Index du premier slot avec des graines, ou -1 si aucune trouvee
+     */
+    fun findSeedsSlotInChest(seedType: String): Int {
+        val future = CompletableFuture<Int>()
+        val targetItem = seedTypeToItem[seedType]
+
+        if (targetItem == null) {
+            logger.warn("Type de graine inconnu: $seedType")
+            return -1
+        }
+
+        client.execute {
+            val screen = client.currentScreen
+            if (screen !is net.minecraft.client.gui.screen.ingame.HandledScreen<*>) {
+                future.complete(-1)
+                return@execute
+            }
+
+            val handler = screen.screenHandler
+            if (handler == null) {
+                future.complete(-1)
+                return@execute
+            }
+
+            val chestSize = when (handler) {
+                is GenericContainerScreenHandler -> handler.rows * 9
+                else -> 27
+            }
+
+            // Parcourir les slots du coffre uniquement
+            for (i in 0 until chestSize) {
+                val slot = handler.slots[i]
+                val stack = slot.stack
+
+                if (!stack.isEmpty && stack.item == targetItem) {
+                    logger.debug("Graines ($seedType) trouvees dans le coffre slot $i (${stack.count})")
+                    future.complete(i)
+                    return@execute
+                }
+            }
+
+            future.complete(-1)
+        }
+
+        return try {
+            future.get(5, TimeUnit.SECONDS)
+        } catch (e: Exception) {
+            logger.error("Erreur lors de la recherche de graines: ${e.message}")
+            -1
+        }
+    }
+
+    /**
+     * Trouve le dernier slot libre dans la hotbar pour y placer des graines.
+     * Recherche depuis la fin de la hotbar (slot 8) vers le debut.
+     * Thread-safe: peut etre appele depuis n'importe quel thread.
+     * @return Index du dernier slot vide dans la hotbar (menu coffre), ou -1 si hotbar pleine
+     */
+    fun findLastEmptySlotInHotbarForSeeds(): Int {
+        val future = CompletableFuture<Int>()
+
+        client.execute {
+            val screen = client.currentScreen
+            if (screen !is net.minecraft.client.gui.screen.ingame.HandledScreen<*>) {
+                future.complete(-1)
+                return@execute
+            }
+
+            val handler = screen.screenHandler
+            if (handler == null) {
+                future.complete(-1)
+                return@execute
+            }
+
+            val chestSize = when (handler) {
+                is GenericContainerScreenHandler -> handler.rows * 9
+                else -> 27
+            }
+
+            // Hotbar dans le menu coffre: chestSize+27 to chestSize+35
+            val hotbarStart = chestSize + 27
+            val hotbarEnd = chestSize + 35
+
+            // Chercher le dernier slot vide (en partant de la fin)
+            for (i in hotbarEnd downTo hotbarStart) {
+                if (i < handler.slots.size) {
+                    val slot = handler.slots[i]
+                    if (slot.stack.isEmpty) {
+                        logger.debug("Dernier slot vide trouve dans hotbar: $i")
+                        future.complete(i)
+                        return@execute
+                    }
+                }
+            }
+
+            logger.warn("Hotbar pleine - impossible de placer des graines")
+            future.complete(-1)
+        }
+
+        return try {
+            future.get(5, TimeUnit.SECONDS)
+        } catch (e: Exception) {
+            logger.error("Erreur lors de la recherche d'un slot hotbar: ${e.message}")
+            -1
+        }
+    }
+
+    /**
+     * Trouve un slot vide dans l'inventaire principal (pas la hotbar) pour y placer des graines.
+     * Thread-safe: peut etre appele depuis n'importe quel thread.
+     * @return Index du slot vide dans l'inventaire (menu coffre), ou -1 si inventaire plein
+     */
+    fun findEmptySlotInMainInventoryForSeeds(): Int {
+        val future = CompletableFuture<Int>()
+
+        client.execute {
+            val screen = client.currentScreen
+            if (screen !is net.minecraft.client.gui.screen.ingame.HandledScreen<*>) {
+                future.complete(-1)
+                return@execute
+            }
+
+            val handler = screen.screenHandler
+            if (handler == null) {
+                future.complete(-1)
+                return@execute
+            }
+
+            val chestSize = when (handler) {
+                is GenericContainerScreenHandler -> handler.rows * 9
+                else -> 27
+            }
+
+            // Inventaire principal dans le menu coffre: chestSize to chestSize+26
+            val invStart = chestSize
+            val invEnd = chestSize + 26
+
+            // Chercher un slot vide
+            for (i in invStart..invEnd) {
+                if (i < handler.slots.size) {
+                    val slot = handler.slots[i]
+                    if (slot.stack.isEmpty) {
+                        logger.debug("Slot vide trouve dans inventaire principal: $i")
+                        future.complete(i)
+                        return@execute
+                    }
+                }
+            }
+
+            logger.warn("Inventaire principal plein")
+            future.complete(-1)
+        }
+
+        return try {
+            future.get(5, TimeUnit.SECONDS)
+        } catch (e: Exception) {
+            logger.error("Erreur lors de la recherche d'un slot inventaire: ${e.message}")
+            -1
+        }
+    }
+
+    /**
+     * Compte le nombre de graines d'un type dans l'inventaire joueur quand un coffre est ouvert.
+     * Thread-safe: peut etre appele depuis n'importe quel thread.
+     * @param seedType Type de graine a compter
+     * @return Nombre total de graines dans l'inventaire joueur
+     */
+    fun countSeedsInPlayerInventoryInChestMenu(seedType: String): Int {
+        val future = CompletableFuture<Int>()
+        val targetItem = seedTypeToItem[seedType]
+
+        if (targetItem == null) {
+            return 0
+        }
+
+        client.execute {
+            val screen = client.currentScreen
+            if (screen !is net.minecraft.client.gui.screen.ingame.HandledScreen<*>) {
+                future.complete(0)
+                return@execute
+            }
+
+            val handler = screen.screenHandler
+            if (handler == null) {
+                future.complete(0)
+                return@execute
+            }
+
+            val chestSize = when (handler) {
+                is GenericContainerScreenHandler -> handler.rows * 9
+                else -> 27
+            }
+
+            var count = 0
+            // Parcourir les slots de l'inventaire du joueur dans le menu
+            for (i in chestSize until handler.slots.size) {
+                val slot = handler.slots[i]
+                val stack = slot.stack
+
+                if (!stack.isEmpty && stack.item == targetItem) {
+                    count += stack.count
+                }
+            }
+
+            future.complete(count)
+        }
+
+        return try {
+            future.get(5, TimeUnit.SECONDS)
+        } catch (e: Exception) {
+            logger.error("Erreur lors du comptage des graines: ${e.message}")
+            0
+        }
+    }
 }
