@@ -30,6 +30,10 @@ data class AgriConfig(
     // Si vide, la recuperation de seaux de backup est desactivee
     var homeBackup: String = "",
 
+    // Home pour le coffre de graines (ravitaillement automatique)
+    // Si vide, la recuperation de graines est desactivee
+    var homeGraines: String = "",
+
     // Nombre de seaux cible (nombre de seaux a avoir en inventaire)
     var targetBucketCount: Int = 16,
 

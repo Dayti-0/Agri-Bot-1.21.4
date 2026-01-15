@@ -86,6 +86,14 @@ object BotCore {
     private var bucketsToRecover = 0
     private var bucketsRecovered = 0
 
+    // Sous-etats pour la recuperation de graines depuis le coffre de graines
+    private var seedFetchingStep = 0
+    private var seedStacksForHotbar = 1    // 1 stack dans la hotbar
+    private var seedStacksForInventory = 5  // 5 stacks dans l'inventaire
+    private var seedStacksMovedToHotbar = 0
+    private var seedStacksMovedToInventory = 0
+    private var seedFetchingChestOpenAttempts = 0
+
     /**
      * Initialise le bot et enregistre le tick handler.
      */
@@ -262,6 +270,46 @@ object BotCore {
         if (isResumeAfterEvent) {
             stateData.forceFullWaterRefill = false
             logger.info("Reprise apres event: nouveau cycle de croissance demarre")
+        }
+
+        // Verifier si des seaux manquent et si le home backup est configure
+        val currentBucketCount = BucketManager.state.totalBuckets
+        val targetBuckets = config.targetBucketCount
+        val missingBuckets = targetBuckets - currentBucketCount
+
+        if (missingBuckets > 0 && config.homeBackup.isNotBlank()) {
+            logger.warn("========================================")
+            logger.warn("SEAUX MANQUANTS DETECTES AU DEMARRAGE")
+            logger.warn("Seaux actuels: $currentBucketCount")
+            logger.warn("Seaux cibles: $targetBuckets")
+            logger.warn("Seaux manquants: $missingBuckets")
+            logger.warn("Recuperation depuis: ${config.homeBackup}")
+            logger.warn("========================================")
+
+            ChatManager.showActionBar("$missingBuckets seaux manquants - Recuperation...", "e")
+
+            // Preparer les donnees de session avant la recuperation
+            stateData.apply {
+                cachedStations = stations
+                currentStationIndex = 0
+                totalStations = stations.size
+                sessionStartTime = System.currentTimeMillis()
+                stationsCompleted = 0
+                needsWaterRefill = needsWater
+                this.isWaterOnlySession = isWaterOnly
+                waterRefillsRemaining = refillsNeeded
+                cycleStartTime = cycleStart
+                isFirstStationOfSession = true
+            }
+
+            // Configurer la recuperation de seaux
+            bucketRecoveryStep = 0
+            bucketsToRecover = missingBuckets
+            bucketsRecovered = 0
+            stateData.state = BotState.RECOVERING_BUCKETS
+            return
+        } else if (missingBuckets > 0) {
+            logger.warn("Seaux manquants ($missingBuckets) mais home backup non configure - on continue quand meme")
         }
 
         stateData.apply {
@@ -442,6 +490,7 @@ object BotCore {
             BotState.NEXT_STATION -> handleNextStation()
             BotState.EMPTYING_REMAINING_BUCKETS -> handleEmptyingRemainingBuckets()
             BotState.RECOVERING_BUCKETS -> handleRecoveringBuckets()
+            BotState.FETCHING_SEEDS -> handleFetchingSeeds()
             BotState.DISCONNECTING -> handleDisconnecting()
             BotState.PAUSED -> handlePaused()
             BotState.ERROR -> handleError()
@@ -1017,7 +1066,42 @@ object BotCore {
         }
 
         // Session normale: ouvrir la station pour recolte/plantation
-        // Selectionner le slot des graines d'abord (cherche automatiquement dans la hotbar)
+        // Verifier d'abord si on a des graines
+        val plantData = config.getSelectedPlantData()
+        if (plantData != null) {
+            val seedType = plantData.seedType
+            val seedsInHotbar = InventoryManager.countSeedsInHotbar(seedType)
+
+            if (seedsInHotbar == 0) {
+                // Pas de graines dans la hotbar
+                if (config.homeGraines.isNotBlank()) {
+                    // Home graines configure - aller chercher des graines
+                    logger.warn("========================================")
+                    logger.warn("PLUS DE GRAINES DANS LA HOTBAR")
+                    logger.warn("Type: $seedType")
+                    logger.warn("Recuperation depuis: ${config.homeGraines}")
+                    logger.warn("========================================")
+
+                    ChatManager.showActionBar("Plus de graines - Recuperation...", "e")
+
+                    // Configurer la recuperation de graines
+                    seedFetchingStep = 0
+                    seedStacksMovedToHotbar = 0
+                    seedStacksMovedToInventory = 0
+                    seedFetchingChestOpenAttempts = 0
+                    stateData.state = BotState.FETCHING_SEEDS
+                    return
+                } else {
+                    // Home graines non configure - erreur
+                    logger.error("Plus de graines ($seedType) et home graines non configure!")
+                    stateData.errorMessage = "Plus de graines ($seedType) - Configurez le home graines"
+                    stateData.state = BotState.ERROR
+                    return
+                }
+            }
+        }
+
+        // Selectionner le slot des graines (cherche automatiquement dans la hotbar)
         InventoryManager.selectSeedsSlotAuto()
 
         stateData.state = BotState.OPENING_STATION
@@ -1555,6 +1639,194 @@ object BotCore {
         }
     }
 
+    /**
+     * Gere la recuperation de graines depuis le coffre de graines.
+     * Recupere 1 stack pour la hotbar et 5 stacks pour l'inventaire.
+     */
+    private fun handleFetchingSeeds() {
+        val plantData = config.getSelectedPlantData()
+        if (plantData == null) {
+            logger.error("Impossible de recuperer les graines - plante non configuree")
+            stateData.errorMessage = "Plante non configuree pour la recuperation de graines"
+            stateData.state = BotState.ERROR
+            return
+        }
+        val seedType = plantData.seedType
+
+        when (seedFetchingStep) {
+            0 -> {
+                // Etape 0: Se teleporter vers le home graines
+                logger.info("========================================")
+                logger.info("RECUPERATION DE GRAINES")
+                logger.info("Home graines: ${config.homeGraines}")
+                logger.info("Type de graine: $seedType")
+                logger.info("Objectif: 1 stack hotbar + 5 stacks inventaire")
+                logger.info("========================================")
+
+                // Sauvegarder la position avant teleportation
+                stateData.positionBeforeTeleport = client.player?.pos
+
+                ChatManager.showActionBar("Recuperation graines...", "6")
+                ChatManager.teleportToHome(config.homeGraines)
+                seedFetchingStep = 1
+                waitMs(config.delayAfterTeleport + 1000)  // Delai supplementaire pour chargement
+            }
+            1 -> {
+                // Etape 1: Ouvrir le coffre (clic droit)
+                if (MenuDetector.isChestOrContainerOpen()) {
+                    logger.info("Coffre graines deja ouvert")
+                    MenuDetector.debugCurrentMenu()
+                    seedFetchingStep = 3
+                    wait(MENU_STABILIZATION_TICKS)
+                    return
+                }
+
+                logger.info("Ouverture coffre graines (tentative ${seedFetchingChestOpenAttempts + 1}/$MAX_CHEST_OPEN_ATTEMPTS)")
+                ActionManager.rightClick()
+                menuOpenRetries = 0
+                seedFetchingStep = 2
+                wait(2)
+            }
+            2 -> {
+                // Etape 2: Attendre que le coffre soit ouvert
+                if (MenuDetector.isChestOrContainerOpen()) {
+                    logger.info("Coffre graines ouvert - stabilisation")
+                    seedFetchingStep = 3
+                    wait(MENU_STABILIZATION_TICKS)
+                } else {
+                    menuOpenRetries++
+                    if (menuOpenRetries >= MAX_MENU_OPEN_RETRIES) {
+                        seedFetchingChestOpenAttempts++
+                        if (seedFetchingChestOpenAttempts >= MAX_CHEST_OPEN_ATTEMPTS) {
+                            logger.error("Echec definitif ouverture coffre graines apres $MAX_CHEST_OPEN_ATTEMPTS tentatives")
+                            stateData.errorMessage = "Impossible d'ouvrir le coffre graines '${config.homeGraines}'"
+                            stateData.state = BotState.ERROR
+                            seedFetchingStep = 0
+                            return
+                        }
+                        logger.warn("Echec ouverture coffre graines - Timeout (tentative $seedFetchingChestOpenAttempts/$MAX_CHEST_OPEN_ATTEMPTS)")
+                        seedFetchingStep = 1
+                        waitMs(1000)
+                    } else {
+                        wait(2)
+                    }
+                }
+            }
+            3 -> {
+                // Etape 3: Verifier que le coffre est bien ouvert et pret
+                if (!MenuDetector.isChestOrContainerOpen()) {
+                    logger.warn("Coffre graines ferme pendant stabilisation - reouverture")
+                    seedFetchingStep = 1
+                    waitMs(500)
+                    return
+                }
+
+                logger.info("Coffre graines pret - debut recuperation")
+                seedStacksMovedToHotbar = 0
+                seedStacksMovedToInventory = 0
+                seedFetchingStep = 4
+                wait(4)
+            }
+            4 -> {
+                // Etape 4: Recuperer 1 stack pour la hotbar
+                if (!MenuDetector.isChestOrContainerOpen()) {
+                    logger.warn("Coffre graines ferme pendant recuperation hotbar - reouverture")
+                    seedFetchingStep = 1
+                    waitMs(500)
+                    return
+                }
+
+                if (seedStacksMovedToHotbar < seedStacksForHotbar) {
+                    // Chercher des graines dans le coffre
+                    val seedSlot = InventoryManager.findSeedsSlotInChest(seedType)
+                    if (seedSlot < 0) {
+                        logger.warn("Plus de graines ($seedType) dans le coffre!")
+                        // Continuer quand meme avec ce qu'on a
+                        seedFetchingStep = 6
+                        waitMs(300)
+                        return
+                    }
+
+                    // Trouver le dernier slot vide de la hotbar
+                    val hotbarSlot = InventoryManager.findLastEmptySlotInHotbarForSeeds()
+                    if (hotbarSlot < 0) {
+                        logger.warn("Hotbar pleine - impossible de mettre les graines")
+                        // Continuer avec l'inventaire
+                        seedStacksMovedToHotbar = seedStacksForHotbar
+                        seedFetchingStep = 5
+                        wait(4)
+                        return
+                    }
+
+                    // Shift-click pour transferer le stack entier
+                    logger.info("Transfert graines du coffre (slot $seedSlot) vers hotbar (slot $hotbarSlot)")
+                    ActionManager.shiftClickSlot(seedSlot)
+                    seedStacksMovedToHotbar++
+                    wait(8)
+                } else {
+                    // Hotbar done, passer a l'inventaire
+                    logger.info("1 stack de graines transfere vers hotbar")
+                    seedFetchingStep = 5
+                    wait(4)
+                }
+            }
+            5 -> {
+                // Etape 5: Recuperer 5 stacks pour l'inventaire
+                if (!MenuDetector.isChestOrContainerOpen()) {
+                    logger.warn("Coffre graines ferme pendant recuperation inventaire - reouverture")
+                    seedFetchingStep = 1
+                    waitMs(500)
+                    return
+                }
+
+                if (seedStacksMovedToInventory < seedStacksForInventory) {
+                    // Chercher des graines dans le coffre
+                    val seedSlot = InventoryManager.findSeedsSlotInChest(seedType)
+                    if (seedSlot < 0) {
+                        logger.warn("Plus de graines ($seedType) dans le coffre! Recuperes: $seedStacksMovedToInventory/$seedStacksForInventory stacks pour inventaire")
+                        // Continuer quand meme avec ce qu'on a
+                        seedFetchingStep = 6
+                        waitMs(300)
+                        return
+                    }
+
+                    // Shift-click pour transferer le stack entier vers l'inventaire
+                    logger.info("Transfert graines du coffre (slot $seedSlot) vers inventaire (${seedStacksMovedToInventory + 1}/$seedStacksForInventory)")
+                    ActionManager.shiftClickSlot(seedSlot)
+                    seedStacksMovedToInventory++
+                    wait(8)
+                } else {
+                    // Inventaire done
+                    logger.info("$seedStacksMovedToInventory stacks de graines transferes vers inventaire")
+                    seedFetchingStep = 6
+                    wait(4)
+                }
+            }
+            6 -> {
+                // Etape 6: Fermer le coffre
+                ActionManager.closeScreen()
+
+                val totalStacks = seedStacksMovedToHotbar + seedStacksMovedToInventory
+                logger.info("========================================")
+                logger.info("RECUPERATION GRAINES TERMINEE")
+                logger.info("Stacks hotbar: $seedStacksMovedToHotbar")
+                logger.info("Stacks inventaire: $seedStacksMovedToInventory")
+                logger.info("Total: $totalStacks stacks")
+                logger.info("========================================")
+
+                ChatManager.showActionBar("$totalStacks stacks de graines recuperes", "a")
+
+                // Reset des variables
+                seedFetchingStep = 0
+                seedFetchingChestOpenAttempts = 0
+
+                // Retourner a la station en cours
+                stateData.state = BotState.TELEPORTING
+                waitMs(500)
+            }
+        }
+    }
+
     private fun handleDisconnecting() {
         val duration = (System.currentTimeMillis() - stateData.sessionStartTime) / 1000 / 60
         val sessionType = if (stateData.isWaterOnlySession) "remplissage eau" else "farming"
@@ -1722,6 +1994,16 @@ object BotCore {
 
         // Afficher le message detaille dans le chat local
         ChatManager.showLocalMessage("Erreur sur '$currentStation': ${stateData.errorMessage}", "c")
+
+        // Fermer tout menu ouvert et relacher les touches avant deconnexion
+        ActionManager.closeScreen()
+        ActionManager.releaseAllKeys()
+
+        // Se deconnecter proprement du serveur pour eviter les problemes
+        if (ChatManager.isConnected()) {
+            logger.info("Deconnexion propre du serveur suite a une erreur...")
+            ServerConnector.disconnectAndPrepareReconnect()
+        }
 
         stop()
     }
