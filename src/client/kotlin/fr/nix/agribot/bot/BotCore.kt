@@ -1880,9 +1880,9 @@ object BotCore {
                         return
                     }
 
-                    // Shift-click pour transferer le stack entier
+                    // Transfert cible vers le dernier slot de la hotbar
                     logger.info("Transfert graines du coffre (slot $seedSlot) vers hotbar (slot $hotbarSlot)")
-                    ActionManager.shiftClickSlot(seedSlot)
+                    ActionManager.pickAndPlaceSlot(seedSlot, hotbarSlot)
                     seedStacksMovedToHotbar++
                     wait(8)
                 } else {
