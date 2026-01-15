@@ -344,17 +344,13 @@ object AutoResponseManager {
 
         if (!isRe) return false
 
-        // Delai de ~1 seconde (900-1100ms pour varier un peu)
-        val reDelay = Random.nextLong(900, 1100)
-
         if (config.testModeActive) {
             logger.info("[MODE TEST] Pattern 're' detecte!")
             logger.info("[MODE TEST] -> Reponse: \"re\"")
-            logger.info("[MODE TEST] -> Delai: ${reDelay}ms")
         }
 
-        scheduleResponse("re", reDelay)
-        logger.info("Reponse 're' programmee pour: $message (delai: ${reDelay}ms)")
+        scheduleResponse("re")
+        logger.info("Reponse 're' programmee pour: $message")
         return true
     }
 
