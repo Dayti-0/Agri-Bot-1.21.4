@@ -24,6 +24,8 @@ object ActionManager {
     private var attackKeyHeld = false
     private var useKeyHeld = false
     private var sneakKeyHeld = false
+    private var forwardKeyHeld = false
+    private var backwardKeyHeld = false
 
     // Cache de la methode doItemUse (reflection coûteuse)
     private val doItemUseMethod: java.lang.reflect.Method? by lazy {
@@ -229,6 +231,134 @@ object ActionManager {
     }
 
     /**
+     * Commence a avancer (touche W).
+     * Thread-safe: peut etre appele depuis n'importe quel thread.
+     */
+    fun startMovingForward() {
+        client.execute {
+            val options = client.options
+            val player = client.player
+
+            // Forcer l'etat de forward via PlayerInput (1.21.4+)
+            player?.let { p ->
+                val currentInput = p.input.playerInput
+                val newInput = PlayerInput(
+                    true,  // forward = true
+                    currentInput.backward,
+                    currentInput.left,
+                    currentInput.right,
+                    currentInput.jump,
+                    currentInput.sneak,
+                    currentInput.sprint
+                )
+                p.input.playerInput = newInput
+            }
+
+            // Activer la touche forward
+            KeyBinding.setKeyPressed(KeyBindingHelper.getBoundKeyOf(options.forwardKey), true)
+            forwardKeyHeld = true
+
+            logger.debug("Debut mouvement avant")
+        }
+    }
+
+    /**
+     * Arrete d'avancer.
+     * Thread-safe: peut etre appele depuis n'importe quel thread.
+     */
+    fun stopMovingForward() {
+        client.execute {
+            val options = client.options
+            val player = client.player
+
+            // Desactiver l'etat de forward via PlayerInput (1.21.4+)
+            player?.let { p ->
+                val currentInput = p.input.playerInput
+                val newInput = PlayerInput(
+                    false,  // forward = false
+                    currentInput.backward,
+                    currentInput.left,
+                    currentInput.right,
+                    currentInput.jump,
+                    currentInput.sneak,
+                    currentInput.sprint
+                )
+                p.input.playerInput = newInput
+            }
+
+            // Desactiver la touche forward
+            KeyBinding.setKeyPressed(KeyBindingHelper.getBoundKeyOf(options.forwardKey), false)
+            forwardKeyHeld = false
+
+            logger.debug("Fin mouvement avant")
+        }
+    }
+
+    /**
+     * Commence a reculer (touche S).
+     * Thread-safe: peut etre appele depuis n'importe quel thread.
+     */
+    fun startMovingBackward() {
+        client.execute {
+            val options = client.options
+            val player = client.player
+
+            // Forcer l'etat de backward via PlayerInput (1.21.4+)
+            player?.let { p ->
+                val currentInput = p.input.playerInput
+                val newInput = PlayerInput(
+                    currentInput.forward,
+                    true,  // backward = true
+                    currentInput.left,
+                    currentInput.right,
+                    currentInput.jump,
+                    currentInput.sneak,
+                    currentInput.sprint
+                )
+                p.input.playerInput = newInput
+            }
+
+            // Activer la touche backward
+            KeyBinding.setKeyPressed(KeyBindingHelper.getBoundKeyOf(options.backKey), true)
+            backwardKeyHeld = true
+
+            logger.debug("Debut mouvement arriere")
+        }
+    }
+
+    /**
+     * Arrete de reculer.
+     * Thread-safe: peut etre appele depuis n'importe quel thread.
+     */
+    fun stopMovingBackward() {
+        client.execute {
+            val options = client.options
+            val player = client.player
+
+            // Desactiver l'etat de backward via PlayerInput (1.21.4+)
+            player?.let { p ->
+                val currentInput = p.input.playerInput
+                val newInput = PlayerInput(
+                    currentInput.forward,
+                    false,  // backward = false
+                    currentInput.left,
+                    currentInput.right,
+                    currentInput.jump,
+                    currentInput.sneak,
+                    currentInput.sprint
+                )
+                p.input.playerInput = newInput
+            }
+
+            // Desactiver la touche backward
+            KeyBinding.setKeyPressed(KeyBindingHelper.getBoundKeyOf(options.backKey), false)
+            backwardKeyHeld = false
+
+            logger.debug("Fin mouvement arriere")
+        }
+    }
+
+    /**
      * Ouvre l'inventaire.
      */
     fun openInventory() {
@@ -356,20 +486,26 @@ object ActionManager {
      */
     fun releaseAllKeys() {
         client.execute {
+            val options = client.options
             if (useKeyHeld) {
-                val options = client.options
                 KeyBinding.setKeyPressed(KeyBindingHelper.getBoundKeyOf(options.useKey), false)
                 useKeyHeld = false
             }
             if (sneakKeyHeld) {
-                val options = client.options
                 KeyBinding.setKeyPressed(KeyBindingHelper.getBoundKeyOf(options.sneakKey), false)
                 sneakKeyHeld = false
             }
             if (attackKeyHeld) {
-                val options = client.options
                 KeyBinding.setKeyPressed(KeyBindingHelper.getBoundKeyOf(options.attackKey), false)
                 attackKeyHeld = false
+            }
+            if (forwardKeyHeld) {
+                KeyBinding.setKeyPressed(KeyBindingHelper.getBoundKeyOf(options.forwardKey), false)
+                forwardKeyHeld = false
+            }
+            if (backwardKeyHeld) {
+                KeyBinding.setKeyPressed(KeyBindingHelper.getBoundKeyOf(options.backKey), false)
+                backwardKeyHeld = false
             }
             logger.debug("Toutes les touches relachees")
         }

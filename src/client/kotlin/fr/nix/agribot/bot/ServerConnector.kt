@@ -44,6 +44,14 @@ enum class ConnectionState {
     RECONNECTING,
     /** Attente que la connexion soit etablie */
     WAITING_CONNECTION_ESTABLISHED,
+    /** Teleportation vers le home mouvement */
+    TELEPORTING_MOVEMENT_HOME,
+    /** Attente apres teleportation mouvement */
+    WAITING_TELEPORT_MOVEMENT,
+    /** Mouvement vers l'avant (2 secondes) */
+    MOVING_FORWARD,
+    /** Mouvement vers l'arriere (2 secondes) */
+    MOVING_BACKWARD,
     /** Connexion terminee avec succes */
     CONNECTED,
     /** Erreur de connexion */
@@ -179,6 +187,10 @@ object ServerConnector {
             ConnectionState.WAITING_RECONNECT -> handleWaitingReconnect()
             ConnectionState.RECONNECTING -> handleReconnecting()
             ConnectionState.WAITING_CONNECTION_ESTABLISHED -> handleWaitingConnectionEstablished()
+            ConnectionState.TELEPORTING_MOVEMENT_HOME -> handleTeleportingMovementHome()
+            ConnectionState.WAITING_TELEPORT_MOVEMENT -> handleWaitingTeleportMovement()
+            ConnectionState.MOVING_FORWARD -> handleMovingForward()
+            ConnectionState.MOVING_BACKWARD -> handleMovingBackward()
             ConnectionState.CONNECTED -> { /* Rien */ }
             ConnectionState.ERROR -> { /* Rien */ }
         }
@@ -221,11 +233,8 @@ object ServerConnector {
         } else {
             // Pas de boussole, peut-etre deja sur le serveur de jeu ou probleme
             logger.info("Pas de boussole - verification si deja connecte")
-            // On considere qu'on est connecte si pas de boussole et pas de captcha
-            state = ConnectionState.CONNECTED
-            ChatManager.showActionBar("Connexion reussie!", "a")
-            // Activer la fenetre de detection auto-reponse
-            AutoResponseManager.onGameServerConnected()
+            // Passer au mouvement initial ou directement connecte
+            transitionToMovementOrConnected()
         }
     }
 
@@ -326,21 +335,17 @@ object ServerConnector {
             // Attendre 7 secondes pour que le monde soit bien charge
             if (waitCounter >= 140) { // 7 secondes apres fermeture du menu
                 logger.info("Connexion au serveur de jeu reussie!")
-                state = ConnectionState.CONNECTED
                 menuJustClosed = false
-                ChatManager.showActionBar("Connecte au serveur de jeu!", "a")
-                // Activer la fenetre de detection auto-reponse
-                AutoResponseManager.onGameServerConnected()
+                // Passer au mouvement initial ou directement connecte
+                transitionToMovementOrConnected()
             }
         } else if (waitCounter >= 400) { // Timeout 20 secondes si menu reste ouvert
             logger.warn("Timeout connexion au serveur de jeu")
             // Fermer le menu et considerer comme connecte (le serveur peut avoir des delais)
             ActionManager.pressEscape()
-            state = ConnectionState.CONNECTED
             menuJustClosed = false
-            ChatManager.showActionBar("Connexion terminee", "a")
-            // Activer la fenetre de detection auto-reponse
-            AutoResponseManager.onGameServerConnected()
+            // Passer au mouvement initial ou directement connecte
+            transitionToMovementOrConnected()
         }
     }
 
@@ -445,6 +450,75 @@ object ServerConnector {
                 state = ConnectionState.ERROR
                 ChatManager.showActionBar(errorMessage, "c")
             }
+        }
+    }
+
+    /**
+     * Determine si on doit effectuer le mouvement initial ou passer directement a CONNECTED.
+     * Verifie si homeMouvement est configure.
+     */
+    private fun transitionToMovementOrConnected() {
+        if (config.homeMouvement.isNotBlank()) {
+            // Mouvement initial configure - teleporter d'abord
+            logger.info("Mouvement initial configure - teleportation vers ${config.homeMouvement}")
+            ChatManager.showActionBar("Mouvement initial...", "6")
+            state = ConnectionState.TELEPORTING_MOVEMENT_HOME
+            waitCounter = 0
+        } else {
+            // Pas de mouvement initial - connexion directe
+            state = ConnectionState.CONNECTED
+            ChatManager.showActionBar("Connexion reussie!", "a")
+            AutoResponseManager.onGameServerConnected()
+        }
+    }
+
+    private fun handleTeleportingMovementHome() {
+        // Teleporter vers le home mouvement
+        val homeMouvement = config.homeMouvement
+        logger.info("Teleportation vers home mouvement: $homeMouvement")
+        ChatManager.sendCommand("home $homeMouvement")
+
+        state = ConnectionState.WAITING_TELEPORT_MOVEMENT
+        waitCounter = 0
+    }
+
+    private fun handleWaitingTeleportMovement() {
+        // Attendre 2 secondes apres la teleportation
+        waitCounter++
+
+        if (waitCounter >= 40) { // 2 secondes
+            logger.info("Teleportation terminee - debut mouvement avant")
+            ChatManager.showActionBar("Avance...", "6")
+            ActionManager.startMovingForward()
+            state = ConnectionState.MOVING_FORWARD
+            waitCounter = 0
+        }
+    }
+
+    private fun handleMovingForward() {
+        // Avancer pendant 2 secondes
+        waitCounter++
+
+        if (waitCounter >= 40) { // 2 secondes
+            logger.info("Fin mouvement avant - debut mouvement arriere")
+            ActionManager.stopMovingForward()
+            ChatManager.showActionBar("Recule...", "6")
+            ActionManager.startMovingBackward()
+            state = ConnectionState.MOVING_BACKWARD
+            waitCounter = 0
+        }
+    }
+
+    private fun handleMovingBackward() {
+        // Reculer pendant 2 secondes
+        waitCounter++
+
+        if (waitCounter >= 40) { // 2 secondes
+            logger.info("Fin mouvement arriere - connexion terminee")
+            ActionManager.stopMovingBackward()
+            state = ConnectionState.CONNECTED
+            ChatManager.showActionBar("Connexion reussie!", "a")
+            AutoResponseManager.onGameServerConnected()
         }
     }
 

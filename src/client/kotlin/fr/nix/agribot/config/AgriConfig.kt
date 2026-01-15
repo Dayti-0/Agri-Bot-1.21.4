@@ -34,6 +34,11 @@ data class AgriConfig(
     // Si vide, la recuperation de graines est desactivee
     var homeGraines: String = "",
 
+    // Home pour le mouvement initial apres connexion
+    // Si vide, le mouvement initial est desactive
+    // Permet de contourner le bug serveur qui necessite un mouvement avant d'envoyer des messages
+    var homeMouvement: String = "",
+
     // Nombre de seaux cible (nombre de seaux a avoir en inventaire)
     var targetBucketCount: Int = 16,
 
