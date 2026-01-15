@@ -85,6 +85,7 @@ object BotCore {
     private var bucketRecoveryStep = 0
     private var bucketsToRecover = 0
     private var bucketsRecovered = 0
+    private var sourceBucketSlot = -1  // Slot d'ou on a pris les sceaux (pour remettre le reste)
 
     // Sous-etats pour la recuperation de graines depuis le coffre de graines
     private var seedFetchingStep = 0
@@ -1559,10 +1560,11 @@ object BotCore {
                 }
             }
             3 -> {
-                // Etape 3: Chercher les seaux dans le coffre et les recuperer un par un
+                // Etape 3: Chercher les seaux dans le coffre et prendre un stack
                 if (!MenuDetector.isChestOrContainerOpen()) {
                     logger.warn("Coffre backup ferme pendant recuperation - reouverture")
                     bucketRecoveryStep = 1
+                    sourceBucketSlot = -1
                     waitMs(500)
                     return
                 }
@@ -1582,6 +1584,7 @@ object BotCore {
                     bucketRecoveryStep = 0
                     bucketsRecovered = 0
                     bucketsToRecover = 0
+                    sourceBucketSlot = -1
 
                     // Continuer vers TELEPORTING pour reprendre la session
                     stateData.state = BotState.TELEPORTING
@@ -1595,6 +1598,7 @@ object BotCore {
                     logger.warn("Plus de seaux dans le coffre backup! Recuperes: $bucketsRecovered/$bucketsToRecover")
                     ActionManager.closeScreen()
                     bucketRecoveryStep = 0
+                    sourceBucketSlot = -1
 
                     // Continuer quand meme avec ce qu'on a
                     stateData.state = BotState.TELEPORTING
@@ -1602,63 +1606,115 @@ object BotCore {
                     return
                 }
 
-                // Recuperer UN seau (clic gauche pour prendre, puis clic gauche dans inventaire pour deposer)
-                // Etape 3a: Prendre le stack en main
-                logger.debug("Recuperation seau ${bucketsRecovered + 1}/$bucketsToRecover depuis slot $bucketSlot")
+                // Memoriser le slot source pour pouvoir remettre le reste apres
+                sourceBucketSlot = bucketSlot
+
+                // Prendre le stack en main (clic gauche)
+                logger.debug("Prise du stack de seaux depuis slot $bucketSlot")
                 ActionManager.leftClickSlot(bucketSlot)
                 bucketRecoveryStep = 4
                 wait(4)
             }
             4 -> {
-                // Etape 4: Deposer UN seau dans l'inventaire (clic droit = deposer 1)
-                // Priorite: empiler avec seaux existants dans hotbar > slot vide hotbar > inventaire
+                // Etape 4: Deposer les seaux 1 par 1 dans l'inventaire (clic droit = deposer 1)
+                // Continuer tant qu'on n'a pas atteint le compte ET que le curseur n'est pas vide
+
+                // Verifier si le curseur est vide (on a tout depose ou le stack etait vide)
+                if (InventoryManager.isCursorEmpty()) {
+                    logger.debug("Curseur vide - verifier si on a assez de seaux")
+                    if (bucketsRecovered >= bucketsToRecover) {
+                        // Termine!
+                        logger.info("Recuperation terminee: $bucketsRecovered seaux recuperes")
+                        ActionManager.closeScreen()
+                        bucketRecoveryStep = 0
+                        bucketsRecovered = 0
+                        bucketsToRecover = 0
+                        sourceBucketSlot = -1
+                        stateData.state = BotState.TELEPORTING
+                        waitMs(500)
+                    } else {
+                        // Pas assez - chercher une autre pile
+                        logger.debug("Pas assez de seaux ($bucketsRecovered/$bucketsToRecover) - chercher une autre pile")
+                        bucketRecoveryStep = 3
+                        wait(2)
+                    }
+                    return
+                }
+
+                // Verifier si on a atteint le compte
+                if (bucketsRecovered >= bucketsToRecover) {
+                    // On a assez - remettre le reste dans le coffre
+                    logger.debug("Compte atteint ($bucketsRecovered/$bucketsToRecover) - remettre le reste")
+                    bucketRecoveryStep = 5
+                    wait(2)
+                    return
+                }
+
+                // Deposer 1 seau dans l'inventaire
                 val targetSlot = InventoryManager.findBucketSlotWithSpaceInPlayerInventory()
                 if (targetSlot >= 0) {
                     ActionManager.rightClickSlot(targetSlot)
                     bucketsRecovered++
                     logger.info("Seau $bucketsRecovered/$bucketsToRecover recupere (slot $targetSlot)")
-                    bucketRecoveryStep = 5
+                    // Rester a l'etape 4 pour continuer a deposer
                     wait(4)
                 } else {
-                    // Pas de slot disponible, remettre le seau et continuer
+                    // Pas de slot disponible - remettre le reste et terminer
                     logger.warn("Inventaire plein - impossible de recuperer plus de seaux")
-                    // Remettre le seau dans le coffre
-                    val bucketSlot = InventoryManager.findFirstBucketSlotInChest()
-                    if (bucketSlot >= 0) {
-                        ActionManager.leftClickSlot(bucketSlot)
-                    }
-                    ActionManager.closeScreen()
-                    bucketRecoveryStep = 0
-                    stateData.state = BotState.TELEPORTING
-                    waitMs(500)
+                    bucketRecoveryStep = 5
+                    wait(2)
                 }
             }
             5 -> {
                 // Etape 5: Remettre le reste du stack dans le coffre
-                // Verifier d'abord si le curseur est vide (peut arriver si on a pris exactement le bon nombre)
+                // Verifier d'abord si le curseur est vide
                 if (InventoryManager.isCursorEmpty()) {
-                    logger.debug("Curseur vide - continuer la recuperation")
-                    bucketRecoveryStep = 3  // Continuer la recuperation
-                    wait(2)
+                    logger.debug("Curseur vide - continuer ou terminer")
+                    if (bucketsRecovered >= bucketsToRecover) {
+                        // Termine!
+                        logger.info("Recuperation terminee: $bucketsRecovered seaux recuperes")
+                        ActionManager.closeScreen()
+                        bucketRecoveryStep = 0
+                        bucketsRecovered = 0
+                        bucketsToRecover = 0
+                        sourceBucketSlot = -1
+                        stateData.state = BotState.TELEPORTING
+                        waitMs(500)
+                    } else {
+                        // Chercher une autre pile
+                        bucketRecoveryStep = 3
+                        wait(2)
+                    }
                     return
                 }
 
-                // Essayer de remettre dans un slot avec des seaux existants
-                val bucketSlot = InventoryManager.findFirstBucketSlotInChest()
-                if (bucketSlot >= 0) {
-                    logger.debug("Remise du reste dans le slot seau $bucketSlot")
-                    ActionManager.leftClickSlot(bucketSlot)
-                    bucketRecoveryStep = 6  // Verifier que le curseur est bien vide
+                // IMPORTANT: Utiliser le slot source original pour eviter l'echange de stacks
+                // Si le slot source est connu, remettre directement dedans
+                if (sourceBucketSlot >= 0) {
+                    logger.debug("Remise du reste dans le slot source $sourceBucketSlot")
+                    ActionManager.leftClickSlot(sourceBucketSlot)
+                    sourceBucketSlot = -1  // Reset apres utilisation
+                    bucketRecoveryStep = 6
                     wait(4)
                     return
                 }
 
-                // Sinon trouver un slot vide dans le coffre
+                // Sinon trouver un slot vide dans le coffre (PRIORITE: slot vide pour eviter echange)
                 val emptyChestSlot = InventoryManager.findEmptySlotInChest()
                 if (emptyChestSlot >= 0) {
                     logger.debug("Remise du reste dans le slot vide $emptyChestSlot")
                     ActionManager.leftClickSlot(emptyChestSlot)
-                    bucketRecoveryStep = 6  // Verifier que le curseur est bien vide
+                    bucketRecoveryStep = 6
+                    wait(4)
+                    return
+                }
+
+                // En dernier recours, essayer un slot avec des seaux (peut causer echange)
+                val bucketSlot = InventoryManager.findFirstBucketSlotInChest()
+                if (bucketSlot >= 0) {
+                    logger.debug("Remise du reste dans le slot seau $bucketSlot (risque d'echange)")
+                    ActionManager.leftClickSlot(bucketSlot)
+                    bucketRecoveryStep = 6
                     wait(4)
                     return
                 }
@@ -1668,12 +1724,12 @@ object BotCore {
                 if (playerSlot >= 0) {
                     logger.warn("Coffre plein - depot du reste dans l'inventaire joueur slot $playerSlot")
                     ActionManager.leftClickSlot(playerSlot)
-                    bucketRecoveryStep = 6  // Verifier que le curseur est bien vide
+                    bucketRecoveryStep = 6
                     wait(4)
                     return
                 }
 
-                // Dernier recours: drop les items (ne devrait jamais arriver)
+                // Dernier recours: erreur
                 logger.error("Impossible de deposer les seaux restants - inventaire et coffre pleins!")
                 bucketRecoveryStep = 6
                 wait(4)
@@ -1686,9 +1742,21 @@ object BotCore {
                     wait(2)
                     return
                 }
-                logger.debug("Curseur vide confirme - continuer la recuperation")
-                bucketRecoveryStep = 3  // Continuer la recuperation
-                wait(2)
+                logger.debug("Curseur vide confirme")
+                // Verifier si on a termine ou si on doit continuer
+                if (bucketsRecovered >= bucketsToRecover) {
+                    logger.info("Recuperation terminee: $bucketsRecovered seaux recuperes")
+                    ActionManager.closeScreen()
+                    bucketRecoveryStep = 0
+                    bucketsRecovered = 0
+                    bucketsToRecover = 0
+                    sourceBucketSlot = -1
+                    stateData.state = BotState.TELEPORTING
+                    waitMs(500)
+                } else {
+                    bucketRecoveryStep = 3  // Continuer la recuperation
+                    wait(2)
+                }
             }
         }
     }
