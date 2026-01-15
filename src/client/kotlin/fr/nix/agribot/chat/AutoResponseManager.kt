@@ -163,6 +163,11 @@ object AutoResponseManager {
             return
         }
 
+        // Verifier si c'est un "re" (reponse rapide ~1s)
+        if (checkReResponse(chatContent.sender, chatContent.content)) {
+            return
+        }
+
         // Analyser avec l'API Mistral
         analyzeAndRespond(chatContent.sender, chatContent.content, playerName)
     }
@@ -191,6 +196,12 @@ object AutoResponseManager {
 
         if (checkDamnResponse(sender, message)) {
             logger.info("[MODE TEST] -> Reponse damn declenchee!")
+            return
+        }
+
+        // Verifier si c'est un "re"
+        if (checkReResponse(sender, message)) {
+            logger.info("[MODE TEST] -> Reponse 're' declenchee!")
             return
         }
 
@@ -317,6 +328,33 @@ object AutoResponseManager {
     }
 
     /**
+     * Verifie si c'est un message "re" et repond en consequence.
+     * Delai de reponse: ~1 seconde.
+     * @return true si une reponse "re" a ete envoyee
+     */
+    private fun checkReResponse(sender: String, message: String): Boolean {
+        val config = AutoResponseConfig.get()
+        val normalizedMessage = normalizeText(message).trim()
+
+        // Verifier si le message est exactement "re" (avec ou sans ponctuation)
+        val isRe = normalizedMessage == "re" ||
+                   normalizedMessage == "re!" ||
+                   normalizedMessage == "re." ||
+                   normalizedMessage == "re !"
+
+        if (!isRe) return false
+
+        if (config.testModeActive) {
+            logger.info("[MODE TEST] Pattern 're' detecte!")
+            logger.info("[MODE TEST] -> Reponse: \"re\"")
+        }
+
+        scheduleResponse("re")
+        logger.info("Reponse 're' programmee pour: $message")
+        return true
+    }
+
+    /**
      * Verifie si le pseudo du bot est mentionne dans le message.
      */
     private fun isPlayerMentioned(message: String, playerName: String): Boolean {
@@ -396,9 +434,11 @@ object AutoResponseManager {
 
     /**
      * Programme l'envoi d'une reponse avec un delai simulant la frappe humaine.
+     * @param message Le message a envoyer
+     * @param customDelayMs Delai personnalise en ms (si null, utilise le calcul de frappe humaine)
      */
-    private fun scheduleResponse(message: String) {
-        val delay = calculateTypingDelay(message)
+    private fun scheduleResponse(message: String, customDelayMs: Long? = null) {
+        val delay = customDelayMs ?: calculateTypingDelay(message)
         val sendTime = System.currentTimeMillis() + delay
         pendingResponses.add(PendingResponse(message, sendTime))
         logger.info("Reponse '$message' programmee dans ${delay}ms")
