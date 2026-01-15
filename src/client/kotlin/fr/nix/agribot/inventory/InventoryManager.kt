@@ -776,6 +776,43 @@ object InventoryManager {
     }
 
     /**
+     * Verifie si le curseur (items tenus par la souris) est vide.
+     * Thread-safe: peut etre appele depuis n'importe quel thread.
+     * @return true si le curseur est vide, false sinon
+     */
+    fun isCursorEmpty(): Boolean {
+        val future = CompletableFuture<Boolean>()
+
+        client.execute {
+            val screen = client.currentScreen
+            if (screen !is net.minecraft.client.gui.screen.ingame.HandledScreen<*>) {
+                future.complete(true)
+                return@execute
+            }
+
+            val handler = screen.screenHandler
+            if (handler == null) {
+                future.complete(true)
+                return@execute
+            }
+
+            val cursorStack = handler.cursorStack
+            val isEmpty = cursorStack.isEmpty
+            if (!isEmpty) {
+                logger.debug("Curseur non vide: ${cursorStack.item} x${cursorStack.count}")
+            }
+            future.complete(isEmpty)
+        }
+
+        return try {
+            future.get(5, TimeUnit.SECONDS)
+        } catch (e: Exception) {
+            logger.error("Erreur lors de la verification du curseur: ${e.message}")
+            true
+        }
+    }
+
+    /**
      * Trouve un slot vide dans l'inventaire du joueur quand un coffre est ouvert.
      * Thread-safe: peut etre appele depuis n'importe quel thread.
      * @return Index du slot vide dans le menu, ou -1 si aucun trouve

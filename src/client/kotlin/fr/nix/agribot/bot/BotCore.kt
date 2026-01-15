@@ -1562,6 +1562,14 @@ object BotCore {
                     return
                 }
 
+                // IMPORTANT: Verifier que le curseur est vide avant toute action
+                if (!InventoryManager.isCursorEmpty()) {
+                    logger.warn("Curseur non vide au debut de l'etape 3 - depot necessaire")
+                    bucketRecoveryStep = 5  // Aller deposer le contenu du curseur
+                    wait(2)
+                    return
+                }
+
                 if (bucketsRecovered >= bucketsToRecover) {
                     // Tous les seaux recuperes
                     logger.info("Recuperation terminee: $bucketsRecovered seaux recuperes")
@@ -1622,19 +1630,60 @@ object BotCore {
             }
             5 -> {
                 // Etape 5: Remettre le reste du stack dans le coffre
+                // Verifier d'abord si le curseur est vide (peut arriver si on a pris exactement le bon nombre)
+                if (InventoryManager.isCursorEmpty()) {
+                    logger.debug("Curseur vide - continuer la recuperation")
+                    bucketRecoveryStep = 3  // Continuer la recuperation
+                    wait(2)
+                    return
+                }
+
+                // Essayer de remettre dans un slot avec des seaux existants
                 val bucketSlot = InventoryManager.findFirstBucketSlotInChest()
                 if (bucketSlot >= 0) {
-                    // Remettre le reste dans le meme slot
+                    logger.debug("Remise du reste dans le slot seau $bucketSlot")
                     ActionManager.leftClickSlot(bucketSlot)
-                } else {
-                    // Trouver un slot vide dans le coffre pour y mettre le reste
-                    val emptyChestSlot = InventoryManager.findEmptySlotInChest()
-                    if (emptyChestSlot >= 0) {
-                        ActionManager.leftClickSlot(emptyChestSlot)
-                    }
+                    bucketRecoveryStep = 6  // Verifier que le curseur est bien vide
+                    wait(4)
+                    return
                 }
-                bucketRecoveryStep = 3  // Continuer la recuperation
+
+                // Sinon trouver un slot vide dans le coffre
+                val emptyChestSlot = InventoryManager.findEmptySlotInChest()
+                if (emptyChestSlot >= 0) {
+                    logger.debug("Remise du reste dans le slot vide $emptyChestSlot")
+                    ActionManager.leftClickSlot(emptyChestSlot)
+                    bucketRecoveryStep = 6  // Verifier que le curseur est bien vide
+                    wait(4)
+                    return
+                }
+
+                // Si le coffre est plein, mettre dans l'inventaire du joueur
+                val playerSlot = InventoryManager.findEmptySlotInPlayerInventory()
+                if (playerSlot >= 0) {
+                    logger.warn("Coffre plein - depot du reste dans l'inventaire joueur slot $playerSlot")
+                    ActionManager.leftClickSlot(playerSlot)
+                    bucketRecoveryStep = 6  // Verifier que le curseur est bien vide
+                    wait(4)
+                    return
+                }
+
+                // Dernier recours: drop les items (ne devrait jamais arriver)
+                logger.error("Impossible de deposer les seaux restants - inventaire et coffre pleins!")
+                bucketRecoveryStep = 6
                 wait(4)
+            }
+            6 -> {
+                // Etape 6: Verifier que le curseur est bien vide avant de continuer
+                if (!InventoryManager.isCursorEmpty()) {
+                    logger.warn("Curseur toujours non vide apres depot - nouvelle tentative")
+                    bucketRecoveryStep = 5  // Retour a l'etape de depot
+                    wait(2)
+                    return
+                }
+                logger.debug("Curseur vide confirme - continuer la recuperation")
+                bucketRecoveryStep = 3  // Continuer la recuperation
+                wait(2)
             }
         }
     }
