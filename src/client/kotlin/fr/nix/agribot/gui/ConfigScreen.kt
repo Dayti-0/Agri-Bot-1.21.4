@@ -22,6 +22,7 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
     private lateinit var coffreField: TextFieldWidget
     private lateinit var backupField: TextFieldWidget
     private lateinit var grainesField: TextFieldWidget
+    private lateinit var mouvementField: TextFieldWidget
     private lateinit var passwordField: TextFieldWidget
     private lateinit var plantLeftButton: ButtonWidget
     private lateinit var plantRightButton: ButtonWidget
@@ -88,8 +89,17 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
         grainesField.setMaxLength(30)
         addDrawableChild(grainesField)
 
+        // === Section Mouvement ===
+        val mouvementY = coffreY + 28
+
+        // Home mouvement pour le mouvement initial apres connexion
+        mouvementField = TextFieldWidget(textRenderer, centerX - 100, mouvementY, 200, 20, Text.literal("Mouvement"))
+        mouvementField.text = config.homeMouvement
+        mouvementField.setMaxLength(30)
+        addDrawableChild(mouvementField)
+
         // === Section Mot de passe ===
-        val passwordY = coffreY + 28
+        val passwordY = mouvementY + 28
 
         // Mot de passe pour /login
         passwordField = TextFieldWidget(textRenderer, centerX - 100, passwordY, 200, 20, Text.literal("Password"))
@@ -252,11 +262,14 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
         context.drawTextWithShadow(textRenderer, "Backup:", centerX - 48, 70, 0xAAAAAA)
         context.drawTextWithShadow(textRenderer, "Graines:", centerX + 55, 70, 0xAAAAAA)
 
+        // Label section Mouvement
+        context.drawTextWithShadow(textRenderer, "Home mouvement (fix msg):", centerX - 100, 98, 0xAAAAAA)
+
         // Label section Mot de passe
-        context.drawTextWithShadow(textRenderer, "Mot de passe /login:", centerX - 100, 98, 0xAAAAAA)
+        context.drawTextWithShadow(textRenderer, "Mot de passe /login:", centerX - 100, 126, 0xAAAAAA)
 
         // Label section Duree eau
-        context.drawTextWithShadow(textRenderer, "Duree eau stations:", centerX - 100, 126, 0xAAAAAA)
+        context.drawTextWithShadow(textRenderer, "Duree eau stations:", centerX - 100, 154, 0xAAAAAA)
 
         // Titre section Stations
         val stationsTitleY = stationsStartY - 10
@@ -293,10 +306,11 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
         config.selectedPlant = plantNames[selectedPlantIndex]
         config.growthBoost = boostField.text.toFloatOrNull() ?: 29f
 
-        // Sauvegarder le coffre, le backup et les graines
+        // Sauvegarder le coffre, le backup, les graines et le mouvement
         config.homeCoffre = coffreField.text
         config.homeBackup = backupField.text
         config.homeGraines = grainesField.text
+        config.homeMouvement = mouvementField.text
 
         // Sauvegarder le mot de passe
         config.loginPassword = passwordField.text
