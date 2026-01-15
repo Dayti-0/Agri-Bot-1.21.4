@@ -117,7 +117,8 @@ object BotCore {
 
     /**
      * Gere l'ecran de deconnexion automatiquement.
-     * Quand le bot est actif et en pause ou deconnexion, ferme l'ecran et revient au menu.
+     * Quand le bot est actif, ferme TOUJOURS l'ecran et revient au menu serveurs
+     * pour permettre la reconnexion automatique.
      */
     private fun handleDisconnectedScreen() {
         val currentScreen = client.currentScreen
@@ -128,16 +129,21 @@ object BotCore {
             if (config.botEnabled) {
                 val currentState = stateData.state
 
-                // Si le bot est en PAUSED, DISCONNECTING, CONNECTING ou ERROR, fermer l'ecran
+                // TOUJOURS fermer l'ecran de deconnexion quand le bot est actif
                 // pour permettre la reconnexion automatique
-                if (currentState == BotState.PAUSED ||
-                    currentState == BotState.DISCONNECTING ||
-                    currentState == BotState.CONNECTING ||
-                    currentState == BotState.ERROR) {
-                    logger.info("Ecran de deconnexion detecte - retour au menu serveurs (etat: $currentState)")
-                    client.execute {
-                        client.setScreen(MultiplayerScreen(TitleScreen()))
-                    }
+                logger.info("Ecran de deconnexion detecte - retour au menu serveurs (etat: $currentState)")
+                client.execute {
+                    client.setScreen(MultiplayerScreen(TitleScreen()))
+                }
+
+                // Si on n'est pas deja en mode reconnexion, declencher une reconnexion
+                if (currentState != BotState.PAUSED &&
+                    currentState != BotState.DISCONNECTING &&
+                    currentState != BotState.CONNECTING &&
+                    currentState != BotState.IDLE) {
+                    // On etait en pleine session - declencher reconnexion automatique
+                    logger.info("Deconnexion inattendue depuis l'etat $currentState - demarrage reconnexion automatique")
+                    handleUnexpectedDisconnection()
                 }
             }
         }
