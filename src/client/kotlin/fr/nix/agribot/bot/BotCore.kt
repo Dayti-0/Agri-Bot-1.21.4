@@ -78,8 +78,8 @@ object BotCore {
     // Gestion des retries de connexion avec delai anti-spam
     private var connectionRetryCount = 0
     private var connectionRetryDelayTicks = 0
-    private const val MAX_CONNECTION_RETRIES = 3
-    private const val CONNECTION_RETRY_DELAY_TICKS = 100  // 5 secondes
+    // Reconnexion automatique: jamais abandonner, attendre 30 secondes entre chaque tentative
+    private const val CONNECTION_RETRY_DELAY_TICKS = 600  // 30 secondes
 
     // Sous-etats pour la recuperation de seaux depuis le coffre de backup
     private var bucketRecoveryStep = 0
@@ -117,7 +117,8 @@ object BotCore {
 
     /**
      * Gere l'ecran de deconnexion automatiquement.
-     * Quand le bot est actif et en pause ou deconnexion, ferme l'ecran et revient au menu.
+     * Quand le bot est actif, ferme TOUJOURS l'ecran et revient au menu serveurs
+     * pour permettre la reconnexion automatique.
      */
     private fun handleDisconnectedScreen() {
         val currentScreen = client.currentScreen
@@ -128,12 +129,21 @@ object BotCore {
             if (config.botEnabled) {
                 val currentState = stateData.state
 
-                // Si le bot est en PAUSED ou DISCONNECTING, fermer l'ecran
-                if (currentState == BotState.PAUSED || currentState == BotState.DISCONNECTING) {
-                    logger.info("Ecran de deconnexion detecte - retour au menu serveurs (etat: $currentState)")
-                    client.execute {
-                        client.setScreen(MultiplayerScreen(TitleScreen()))
-                    }
+                // TOUJOURS fermer l'ecran de deconnexion quand le bot est actif
+                // pour permettre la reconnexion automatique
+                logger.info("Ecran de deconnexion detecte - retour au menu serveurs (etat: $currentState)")
+                client.execute {
+                    client.setScreen(MultiplayerScreen(TitleScreen()))
+                }
+
+                // Si on n'est pas deja en mode reconnexion, declencher une reconnexion
+                if (currentState != BotState.PAUSED &&
+                    currentState != BotState.DISCONNECTING &&
+                    currentState != BotState.CONNECTING &&
+                    currentState != BotState.IDLE) {
+                    // On etait en pleine session - declencher reconnexion automatique
+                    logger.info("Deconnexion inattendue depuis l'etat $currentState - demarrage reconnexion automatique")
+                    handleUnexpectedDisconnection()
                 }
             }
         }
@@ -345,11 +355,12 @@ object BotCore {
      * Elle reprend a la station ou le bot s'est arrete.
      */
     private fun resumeFarmingSession() {
-        // Verifier la connexion
+        // Verifier la connexion - si pas connecte, retenter la connexion
         if (!ChatManager.isConnected()) {
-            ChatManager.showActionBar("Pas connecte au serveur!", "c")
-            stateData.errorMessage = "Pas connecte au serveur apres reconnexion"
-            stateData.state = BotState.ERROR
+            ChatManager.showActionBar("Pas connecte - retry dans 30s...", "e")
+            logger.warn("Pas connecte au serveur apres reconnexion - nouvelle tentative dans 30 secondes")
+            connectionRetryDelayTicks = CONNECTION_RETRY_DELAY_TICKS
+            stateData.state = BotState.CONNECTING
             return
         }
 
@@ -515,15 +526,15 @@ object BotCore {
 
     /**
      * Verifie si le joueur est toujours connecte au serveur.
-     * Si deconnecte, passe en etat d'erreur avec un message explicite.
+     * Si deconnecte, declenche une reconnexion automatique apres 30 secondes.
      * @param operation Nom de l'operation en cours (pour le message d'erreur)
      * @return true si connecte, false si deconnecte
      */
     private fun checkConnection(operation: String): Boolean {
         if (!ChatManager.isConnected()) {
-            logger.error("Connexion perdue pendant: $operation")
-            stateData.errorMessage = "Connexion perdue pendant: $operation"
-            stateData.state = BotState.ERROR
+            logger.error("Connexion perdue pendant: $operation - retry dans 30s")
+            ChatManager.showActionBar("Connexion perdue - retry dans 30s...", "e")
+            handleUnexpectedDisconnection()
             return false
         }
         return true
@@ -570,9 +581,11 @@ object BotCore {
                 stateData.state = BotState.CONNECTING
                 return
             } else {
-                logger.warn("Erreur demarrage connexion: ${ServerConnector.errorMessage}")
-                stateData.errorMessage = "Erreur demarrage connexion: ${ServerConnector.errorMessage}"
-                stateData.state = BotState.ERROR
+                // Echec demarrage connexion - retenter apres 30 secondes
+                logger.warn("Erreur demarrage connexion: ${ServerConnector.errorMessage} - retry dans 30s")
+                ChatManager.showActionBar("Echec connexion - retry dans 30s...", "e")
+                connectionRetryDelayTicks = CONNECTION_RETRY_DELAY_TICKS
+                stateData.state = BotState.CONNECTING
                 return
             }
         }
@@ -698,7 +711,7 @@ object BotCore {
             if (connectionRetryDelayTicks <= 0) {
                 // Delai termine, relancer la connexion
                 connectionRetryCount++
-                logger.info("Retry connexion (tentative $connectionRetryCount/$MAX_CONNECTION_RETRIES)...")
+                logger.info("Retry connexion (tentative $connectionRetryCount)...")
                 ServerConnector.reset()
                 if (ChatManager.isConnected()) {
                     // Joueur encore sur le serveur, relancer startConnection
@@ -728,22 +741,14 @@ object BotCore {
                     startFarmingSession()
                 }
             } else {
-                // Erreur de connexion - verifier si on peut retenter
+                // Erreur de connexion - toujours retenter (jamais abandonner)
                 val errorContext = "Connexion serveur '${config.serverAddress}' echouee: ${ServerConnector.errorMessage}"
                 logger.error(errorContext)
 
-                if (connectionRetryCount < MAX_CONNECTION_RETRIES) {
-                    // Retenter apres un delai de 5 secondes (anti-spam)
-                    logger.info("Retry connexion dans 5 secondes (tentative ${connectionRetryCount + 1}/$MAX_CONNECTION_RETRIES)...")
-                    ChatManager.showActionBar("Echec connexion - retry dans 5s...", "e")
-                    connectionRetryDelayTicks = CONNECTION_RETRY_DELAY_TICKS
-                } else {
-                    // Trop de tentatives, abandonner
-                    logger.error("Echec connexion apres $MAX_CONNECTION_RETRIES tentatives")
-                    stateData.errorMessage = "$errorContext (apres $MAX_CONNECTION_RETRIES tentatives)"
-                    stateData.state = BotState.ERROR
-                    connectionRetryCount = 0  // Reset pour la prochaine fois
-                }
+                // Retenter apres un delai de 30 secondes (ne jamais abandonner)
+                logger.info("Retry connexion dans 30 secondes (tentative ${connectionRetryCount + 1})...")
+                ChatManager.showActionBar("Echec connexion - retry dans 30s...", "e")
+                connectionRetryDelayTicks = CONNECTION_RETRY_DELAY_TICKS
             }
         }
     }
@@ -2003,10 +2008,12 @@ object BotCore {
         if (ServerConnector.startReconnection()) {
             stateData.state = BotState.CONNECTING
         } else {
+            // Echec reconnexion - retenter apres 30 secondes (ne jamais abandonner)
             val errorContext = "Reconnexion au serveur '${config.serverAddress}' impossible: ${ServerConnector.errorMessage}"
-            logger.error(errorContext)
-            stateData.errorMessage = errorContext
-            stateData.state = BotState.ERROR
+            logger.error("$errorContext - retry dans 30s")
+            ChatManager.showActionBar("Echec reconnexion - retry dans 30s...", "e")
+            connectionRetryDelayTicks = CONNECTION_RETRY_DELAY_TICKS
+            stateData.state = BotState.CONNECTING
         }
     }
 
@@ -2028,6 +2035,7 @@ object BotCore {
             appendLine("Session eau uniquement: ${stateData.isWaterOnlySession}")
             appendLine("Remplissages restants: ${stateData.waterRefillsRemaining}")
             appendLine("Plante: ${config.selectedPlant}")
+            appendLine("Le bot va retenter dans 30 secondes...")
             appendLine("=====================================")
         }
 
@@ -2039,10 +2047,10 @@ object BotCore {
         } else {
             stateData.errorMessage
         }
-        ChatManager.showActionBar("Erreur: $shortMessage", "c")
+        ChatManager.showActionBar("Erreur: $shortMessage - retry 30s", "c")
 
         // Afficher le message detaille dans le chat local
-        ChatManager.showLocalMessage("Erreur sur '$currentStation': ${stateData.errorMessage}", "c")
+        ChatManager.showLocalMessage("Erreur sur '$currentStation': ${stateData.errorMessage} - reconnexion dans 30s", "c")
 
         // Fermer tout menu ouvert et relacher les touches avant deconnexion
         ActionManager.closeScreen()
@@ -2050,10 +2058,16 @@ object BotCore {
 
         // Se deconnecter proprement du serveur pour eviter les problemes
         if (ChatManager.isConnected()) {
-            logger.info("Deconnexion propre du serveur suite a une erreur...")
+            logger.info("Deconnexion propre du serveur suite a une erreur - reconnexion dans 30 secondes...")
             ServerConnector.disconnectAndPrepareReconnect()
         }
 
-        stop()
+        // Au lieu de stop(), on passe en mode reconnexion automatique apres 30 secondes
+        // Le bot ne s'arrete JAMAIS automatiquement (sauf manuellement)
+        logger.info("Passage en mode reconnexion automatique (30 secondes)...")
+        connectionRetryDelayTicks = CONNECTION_RETRY_DELAY_TICKS
+        stateData.isCrashReconnectPause = true  // Pour reprendre la session
+        stateData.stateBeforeCrash = BotState.TELEPORTING  // Reprendre au debut de la station
+        stateData.state = BotState.CONNECTING
     }
 }
