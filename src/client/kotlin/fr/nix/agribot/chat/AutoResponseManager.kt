@@ -230,13 +230,31 @@ object AutoResponseManager {
                 logger.info("[MODE TEST] -> Raison: ${analysis.reason}")
 
                 if (analysis.shouldRespond) {
-                    // FILTRAGE SUPPLEMENTAIRE POUR LES QUESTIONS
+                    // FILTRAGE SUPPLEMENTAIRE
                     val isGreeting = analysis.category == MistralApiClient.MessageCategory.GREETING ||
                                      analysis.category == MistralApiClient.MessageCategory.GREETING_WITH_STATE
-
-                    val shouldActuallyRespond = isGreeting || pseudoMentioned || isActiveConversation
+                    val isAcknowledgment = analysis.category == MistralApiClient.MessageCategory.ACKNOWLEDGMENT
+                    val isConfusion = analysis.category == MistralApiClient.MessageCategory.CONFUSION
 
                     logger.info("[MODE TEST] -> Est salutation: $isGreeting")
+                    logger.info("[MODE TEST] -> Est acknowledgment: $isAcknowledgment")
+                    logger.info("[MODE TEST] -> Est confusion: $isConfusion")
+
+                    // ACKNOWLEDGMENT: fin naturelle de la conversation, pas de reponse
+                    if (isAcknowledgment) {
+                        logger.info("[MODE TEST] -> Acknowledgment recu, fin de conversation (pas de reponse)")
+                        logger.info("[MODE TEST] ====================================")
+                        return@thenAccept
+                    }
+
+                    // CONFUSION: repondre uniquement si conversation active
+                    if (isConfusion && !isActiveConversation) {
+                        logger.info("[MODE TEST] -> Confusion ignoree (pas de conversation active)")
+                        logger.info("[MODE TEST] ====================================")
+                        return@thenAccept
+                    }
+
+                    val shouldActuallyRespond = isGreeting || isConfusion || pseudoMentioned || isActiveConversation
                     logger.info("[MODE TEST] -> Repondre (filtre final): ${if (shouldActuallyRespond) "OUI" else "NON (question sans mention)"}")
 
                     if (!shouldActuallyRespond) {
@@ -399,11 +417,28 @@ object AutoResponseManager {
             .thenAccept { analysis ->
                 if (analysis.shouldRespond) {
                     // FILTRAGE SUPPLEMENTAIRE POUR LES QUESTIONS
-                    // Les salutations passent toujours, les questions necessitent mention ou conversation active
+                    // - Salutations: toujours repondre
+                    // - ACKNOWLEDGMENT: ne JAMAIS repondre (nickel, ok, super = fin de conversation)
+                    // - CONFUSION: repondre si conversation active (pour clarifier)
+                    // - Autres questions: necessitent mention ou conversation active
                     val isGreeting = analysis.category == MistralApiClient.MessageCategory.GREETING ||
                                      analysis.category == MistralApiClient.MessageCategory.GREETING_WITH_STATE
+                    val isAcknowledgment = analysis.category == MistralApiClient.MessageCategory.ACKNOWLEDGMENT
+                    val isConfusion = analysis.category == MistralApiClient.MessageCategory.CONFUSION
 
-                    val shouldActuallyRespond = isGreeting || pseudoMentioned || isActiveConversation
+                    // ACKNOWLEDGMENT: fin naturelle de la conversation, pas de reponse
+                    if (isAcknowledgment) {
+                        logger.info("Acknowledgment recu, fin de conversation: $message")
+                        return@thenAccept
+                    }
+
+                    // CONFUSION: repondre uniquement si conversation active (le "?" est pour nous)
+                    if (isConfusion && !isActiveConversation) {
+                        logger.info("Confusion ignoree (pas de conversation active): $message")
+                        return@thenAccept
+                    }
+
+                    val shouldActuallyRespond = isGreeting || isConfusion || pseudoMentioned || isActiveConversation
 
                     if (!shouldActuallyRespond) {
                         logger.info("Question ignoree (pseudo non mentionne, pas de conversation active): $message")
