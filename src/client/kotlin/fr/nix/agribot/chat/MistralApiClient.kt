@@ -51,8 +51,9 @@ object MistralApiClient {
      * ETAPE 1: Analyse et classifie un message.
      * Determine la categorie du message pour adapter la reponse.
      * @param hasActiveConversation Si true, on a deja echange avec ce joueur recemment
+     * @param conversationHistory Historique des derniers messages de la conversation
      */
-    fun analyzeMessage(message: String, playerUsername: String, senderName: String, hasActiveConversation: Boolean = false): CompletableFuture<MessageAnalysis> {
+    fun analyzeMessage(message: String, playerUsername: String, senderName: String, hasActiveConversation: Boolean = false, conversationHistory: List<String> = emptyList()): CompletableFuture<MessageAnalysis> {
         return CompletableFuture.supplyAsync({
             try {
                 val config = AutoResponseConfig.get()
@@ -72,11 +73,23 @@ Dans ce cas, NE PAS mettre IGNORE sauf si le message mentionne explicitement un 
                     ""
                 }
 
+                // Construire l'historique de conversation si disponible
+                val historyContext = if (conversationHistory.isNotEmpty()) {
+                    """
+
+HISTORIQUE RECENT DE LA CONVERSATION (du plus ancien au plus recent):
+${conversationHistory.joinToString("\n")}
+
+Utilise cet historique pour mieux comprendre le contexte du message actuel."""
+                } else {
+                    ""
+                }
+
                 val systemPrompt = """Tu es un classificateur de messages pour un bot Minecraft occupe (en train de farmer).
 Tu dois analyser les messages du chat et les classifier en categories.
 
 Le joueur bot s'appelle "$playerUsername". Analyse le message de "$senderName".
-$conversationContext
+$conversationContext$historyContext
 
 CATEGORIES (reponds avec le code EXACT):
 - GREETING : Salutation simple sans question (yo, salut, wesh, hey, cc, slt, coucou)
@@ -136,8 +149,10 @@ Exemple: CONFUSION - demande de clarification"""
 
     /**
      * ETAPE 2: Genere une reponse adaptee a la categorie du message.
+     * @param conversationHistory Historique des derniers messages de la conversation
+     * @param recentResponses Les dernieres reponses envoyees a ce joueur (pour eviter repetitions)
      */
-    fun generateResponse(originalMessage: String, senderName: String, playerUsername: String, category: MessageCategory = MessageCategory.GREETING): CompletableFuture<String> {
+    fun generateResponse(originalMessage: String, senderName: String, playerUsername: String, category: MessageCategory = MessageCategory.GREETING, conversationHistory: List<String> = emptyList(), recentResponses: List<String> = emptyList()): CompletableFuture<String> {
         return CompletableFuture.supplyAsync({
             try {
                 val config = AutoResponseConfig.get()
@@ -145,7 +160,7 @@ Exemple: CONFUSION - demande de clarification"""
                     return@supplyAsync ""
                 }
 
-                val systemPrompt = buildResponsePrompt(playerUsername, category)
+                val systemPrompt = buildResponsePrompt(playerUsername, category, conversationHistory, recentResponses)
                 val userPrompt = "Message de $senderName: \"$originalMessage\"\n\nGenere ta reponse:"
 
                 if (config.testModeActive) {
@@ -186,12 +201,36 @@ Exemple: CONFUSION - demande de clarification"""
     /**
      * Construit le prompt de generation selon la categorie.
      * C'est ici que la "magie" opère - chaque categorie a un comportement different.
+     * @param conversationHistory Historique des derniers messages de la conversation
+     * @param recentResponses Les dernieres reponses envoyees (pour eviter repetitions)
      */
-    private fun buildResponsePrompt(playerUsername: String, category: MessageCategory): String {
+    private fun buildResponsePrompt(playerUsername: String, category: MessageCategory, conversationHistory: List<String> = emptyList(), recentResponses: List<String> = emptyList()): String {
+        // Construire le contexte d'historique
+        val historyContext = if (conversationHistory.isNotEmpty()) {
+            """
+
+HISTORIQUE RECENT DE LA CONVERSATION:
+${conversationHistory.joinToString("\n")}
+Utilise ce contexte pour repondre de facon coherente."""
+        } else {
+            ""
+        }
+
+        // Construire la liste des reponses a eviter
+        val avoidContext = if (recentResponses.isNotEmpty()) {
+            """
+
+REPONSES DEJA UTILISEES (NE PAS REPETER):
+${recentResponses.joinToString(", ")}
+Tu DOIS varier tes reponses! Utilise des synonymes ou reformule."""
+        } else {
+            ""
+        }
+
         val baseRules = """Tu es $playerUsername, un joueur Minecraft qui est occupe (en train de farmer).
 Tu dois generer une reponse TRES COURTE (1-5 mots max).
 Style: langage familier de joueur (yo, wesh, trql, dsl, nn, etc.)
-JAMAIS de ponctuation excessive. JAMAIS formel."""
+JAMAIS de ponctuation excessive. JAMAIS formel.$historyContext$avoidContext"""
 
         return when (category) {
             MessageCategory.GREETING -> """$baseRules
