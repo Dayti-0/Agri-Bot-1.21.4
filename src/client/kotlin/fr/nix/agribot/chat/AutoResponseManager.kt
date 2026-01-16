@@ -67,6 +67,30 @@ object AutoResponseManager {
     // Duree pendant laquelle une conversation reste active (30 secondes)
     private const val CONVERSATION_TIMEOUT_MS = 30_000L
 
+    // ============================================
+    // HISTORIQUE DE CONVERSATION (pour contexte API)
+    // ============================================
+    // Stocke les derniers messages echanges: sender -> liste de (auteur, message, timestamp)
+    data class ConversationMessage(val author: String, val content: String, val timestamp: Long, val isBot: Boolean)
+    private val conversationHistory = mutableMapOf<String, MutableList<ConversationMessage>>()
+    private const val MAX_HISTORY_MESSAGES = 5  // Garder les 5 derniers messages par conversation
+
+    // ============================================
+    // VARIETE DES REPONSES (eviter repetitions)
+    // ============================================
+    // Stocke les dernieres reponses envoyees a chaque joueur: sender -> liste de reponses
+    private val recentResponses = mutableMapOf<String, MutableList<String>>()
+    private const val MAX_RECENT_RESPONSES = 5  // Garder les 5 dernieres reponses par joueur
+
+    // ============================================
+    // REGROUPEMENT DE MESSAGES
+    // ============================================
+    // Messages en attente de regroupement: sender -> (messages, timestamp premier message)
+    data class PendingMessages(val messages: MutableList<String>, val firstMessageTime: Long)
+    private val pendingIncomingMessages = mutableMapOf<String, PendingMessages>()
+    // Delai d'attente pour regrouper les messages (ms)
+    private const val MESSAGE_GROUPING_DELAY_MS = 2000L  // 2 secondes
+
     /**
      * Initialise le gestionnaire.
      */
@@ -77,6 +101,11 @@ object AutoResponseManager {
         scheduler?.scheduleAtFixedRate({
             processPendingResponses()
         }, 100, 100, TimeUnit.MILLISECONDS)
+
+        // Tache periodique pour traiter les messages groupes
+        scheduler?.scheduleAtFixedRate({
+            processGroupedMessages()
+        }, 500, 500, TimeUnit.MILLISECONDS)
 
         logger.info("AutoResponseManager initialise")
     }
@@ -158,6 +187,9 @@ object AutoResponseManager {
 
         logger.info("Message recu de ${chatContent.sender}: ${chatContent.content}")
 
+        // Ajouter a l'historique de conversation
+        addToConversationHistory(chatContent.sender, chatContent.sender, chatContent.content, false)
+
         // Verifier d'abord les reponses speciales (damn)
         if (checkDamnResponse(chatContent.sender, chatContent.content)) {
             return
@@ -168,8 +200,8 @@ object AutoResponseManager {
             return
         }
 
-        // Analyser avec l'API Mistral
-        analyzeAndRespond(chatContent.sender, chatContent.content, playerName)
+        // Ajouter le message a la file de regroupement au lieu de traiter immediatement
+        addToPendingMessages(chatContent.sender, chatContent.content)
     }
 
     /**
@@ -230,13 +262,31 @@ object AutoResponseManager {
                 logger.info("[MODE TEST] -> Raison: ${analysis.reason}")
 
                 if (analysis.shouldRespond) {
-                    // FILTRAGE SUPPLEMENTAIRE POUR LES QUESTIONS
+                    // FILTRAGE SUPPLEMENTAIRE
                     val isGreeting = analysis.category == MistralApiClient.MessageCategory.GREETING ||
                                      analysis.category == MistralApiClient.MessageCategory.GREETING_WITH_STATE
-
-                    val shouldActuallyRespond = isGreeting || pseudoMentioned || isActiveConversation
+                    val isAcknowledgment = analysis.category == MistralApiClient.MessageCategory.ACKNOWLEDGMENT
+                    val isConfusion = analysis.category == MistralApiClient.MessageCategory.CONFUSION
 
                     logger.info("[MODE TEST] -> Est salutation: $isGreeting")
+                    logger.info("[MODE TEST] -> Est acknowledgment: $isAcknowledgment")
+                    logger.info("[MODE TEST] -> Est confusion: $isConfusion")
+
+                    // ACKNOWLEDGMENT: fin naturelle de la conversation, pas de reponse
+                    if (isAcknowledgment) {
+                        logger.info("[MODE TEST] -> Acknowledgment recu, fin de conversation (pas de reponse)")
+                        logger.info("[MODE TEST] ====================================")
+                        return@thenAccept
+                    }
+
+                    // CONFUSION: repondre uniquement si conversation active
+                    if (isConfusion && !isActiveConversation) {
+                        logger.info("[MODE TEST] -> Confusion ignoree (pas de conversation active)")
+                        logger.info("[MODE TEST] ====================================")
+                        return@thenAccept
+                    }
+
+                    val shouldActuallyRespond = isGreeting || isConfusion || pseudoMentioned || isActiveConversation
                     logger.info("[MODE TEST] -> Repondre (filtre final): ${if (shouldActuallyRespond) "OUI" else "NON (question sans mention)"}")
 
                     if (!shouldActuallyRespond) {
@@ -394,16 +444,41 @@ object AutoResponseManager {
             logger.info("Pseudo mentionne dans le message")
         }
 
-        // ETAPE 1: Classification du message (avec contexte conversationnel)
-        MistralApiClient.analyzeMessage(message, playerName, sender, isActiveConversation)
+        // Recuperer l'historique de conversation et les reponses recentes
+        val conversationHistory = getConversationHistoryForApi(sender)
+        val recentResponses = getRecentResponsesForApi(sender)
+
+        if (conversationHistory.isNotEmpty()) {
+            logger.info("Historique de conversation: ${conversationHistory.size} messages")
+        }
+
+        // ETAPE 1: Classification du message (avec contexte conversationnel ET historique)
+        MistralApiClient.analyzeMessage(message, playerName, sender, isActiveConversation, conversationHistory)
             .thenAccept { analysis ->
                 if (analysis.shouldRespond) {
                     // FILTRAGE SUPPLEMENTAIRE POUR LES QUESTIONS
-                    // Les salutations passent toujours, les questions necessitent mention ou conversation active
+                    // - Salutations: toujours repondre
+                    // - ACKNOWLEDGMENT: ne JAMAIS repondre (nickel, ok, super = fin de conversation)
+                    // - CONFUSION: repondre si conversation active (pour clarifier)
+                    // - Autres questions: necessitent mention ou conversation active
                     val isGreeting = analysis.category == MistralApiClient.MessageCategory.GREETING ||
                                      analysis.category == MistralApiClient.MessageCategory.GREETING_WITH_STATE
+                    val isAcknowledgment = analysis.category == MistralApiClient.MessageCategory.ACKNOWLEDGMENT
+                    val isConfusion = analysis.category == MistralApiClient.MessageCategory.CONFUSION
 
-                    val shouldActuallyRespond = isGreeting || pseudoMentioned || isActiveConversation
+                    // ACKNOWLEDGMENT: fin naturelle de la conversation, pas de reponse
+                    if (isAcknowledgment) {
+                        logger.info("Acknowledgment recu, fin de conversation: $message")
+                        return@thenAccept
+                    }
+
+                    // CONFUSION: repondre uniquement si conversation active (le "?" est pour nous)
+                    if (isConfusion && !isActiveConversation) {
+                        logger.info("Confusion ignoree (pas de conversation active): $message")
+                        return@thenAccept
+                    }
+
+                    val shouldActuallyRespond = isGreeting || isConfusion || pseudoMentioned || isActiveConversation
 
                     if (!shouldActuallyRespond) {
                         logger.info("Question ignoree (pseudo non mentionne, pas de conversation active): $message")
@@ -412,13 +487,16 @@ object AutoResponseManager {
 
                     logger.info("Message classifie: ${analysis.category} - $message (${analysis.reason})")
 
-                    // ETAPE 2: Generation de reponse avec la categorie
-                    MistralApiClient.generateResponse(message, sender, playerName, analysis.category)
+                    // ETAPE 2: Generation de reponse avec la categorie, l'historique et les reponses recentes
+                    MistralApiClient.generateResponse(message, sender, playerName, analysis.category, conversationHistory, recentResponses)
                         .thenAccept { response ->
                             if (response.isNotEmpty()) {
                                 scheduleResponse(response)
                                 // Marquer la conversation comme active apres avoir repondu
                                 markConversationActive(sender)
+                                // Ajouter a l'historique et aux reponses recentes
+                                addToConversationHistory(sender, playerName, response, true)
+                                addRecentResponse(sender, response)
                                 logger.info("Reponse programmee [${analysis.category}]: $response")
                             }
                         }
@@ -656,5 +734,136 @@ object AutoResponseManager {
         pendingResponses.clear()
         processedMessages.clear()
         activeConversations.clear()
+        conversationHistory.clear()
+        recentResponses.clear()
+        pendingIncomingMessages.clear()
+    }
+
+    // ============================================
+    // GESTION DE L'HISTORIQUE DE CONVERSATION
+    // ============================================
+
+    /**
+     * Ajoute un message a l'historique de conversation.
+     * @param sender Le joueur avec qui on converse (cle de l'historique)
+     * @param author L'auteur du message (peut etre le bot ou le joueur)
+     * @param content Le contenu du message
+     * @param isBot True si c'est une reponse du bot
+     */
+    private fun addToConversationHistory(sender: String, author: String, content: String, isBot: Boolean) {
+        val normalizedSender = normalizeText(sender)
+        val history = conversationHistory.getOrPut(normalizedSender) { mutableListOf() }
+
+        history.add(ConversationMessage(author, content, System.currentTimeMillis(), isBot))
+
+        // Limiter a MAX_HISTORY_MESSAGES
+        while (history.size > MAX_HISTORY_MESSAGES) {
+            history.removeAt(0)
+        }
+    }
+
+    /**
+     * Recupere l'historique de conversation formate pour l'API.
+     * @param sender Le joueur avec qui on converse
+     * @return Liste des messages recents (auteur: message)
+     */
+    fun getConversationHistoryForApi(sender: String): List<String> {
+        val normalizedSender = normalizeText(sender)
+        val history = conversationHistory[normalizedSender] ?: return emptyList()
+
+        // Filtrer les messages trop vieux (plus de 2 minutes)
+        val now = System.currentTimeMillis()
+        val recentHistory = history.filter { now - it.timestamp < 120_000L }
+
+        return recentHistory.map { msg ->
+            val prefix = if (msg.isBot) "[Toi]" else "[${msg.author}]"
+            "$prefix ${msg.content}"
+        }
+    }
+
+    // ============================================
+    // GESTION DE LA VARIETE DES REPONSES
+    // ============================================
+
+    /**
+     * Ajoute une reponse aux reponses recentes pour un joueur.
+     */
+    private fun addRecentResponse(sender: String, response: String) {
+        val normalizedSender = normalizeText(sender)
+        val responses = recentResponses.getOrPut(normalizedSender) { mutableListOf() }
+
+        responses.add(response.lowercase())
+
+        // Limiter a MAX_RECENT_RESPONSES
+        while (responses.size > MAX_RECENT_RESPONSES) {
+            responses.removeAt(0)
+        }
+    }
+
+    /**
+     * Recupere les dernieres reponses envoyees a un joueur.
+     */
+    fun getRecentResponsesForApi(sender: String): List<String> {
+        val normalizedSender = normalizeText(sender)
+        return recentResponses[normalizedSender]?.toList() ?: emptyList()
+    }
+
+    // ============================================
+    // REGROUPEMENT DE MESSAGES
+    // ============================================
+
+    /**
+     * Ajoute un message a la file d'attente de regroupement.
+     * Le message sera traite apres MESSAGE_GROUPING_DELAY_MS si aucun autre message n'arrive.
+     */
+    private fun addToPendingMessages(sender: String, content: String) {
+        val normalizedSender = normalizeText(sender)
+        val now = System.currentTimeMillis()
+
+        val pending = pendingIncomingMessages.getOrPut(normalizedSender) {
+            PendingMessages(mutableListOf(), now)
+        }
+
+        pending.messages.add(content)
+        logger.debug("Message ajoute a la file de regroupement pour $sender (${pending.messages.size} messages)")
+    }
+
+    /**
+     * Traite les messages groupes dont le delai d'attente est expire.
+     * Appele periodiquement par le scheduler.
+     */
+    private fun processGroupedMessages() {
+        val now = System.currentTimeMillis()
+        val playerName = getPlayerUsername()
+
+        // Copier les cles pour eviter ConcurrentModificationException
+        val sendersToProcess = pendingIncomingMessages.keys.toList()
+
+        for (sender in sendersToProcess) {
+            val pending = pendingIncomingMessages[sender] ?: continue
+
+            // Verifier si le delai est expire
+            if (now - pending.firstMessageTime >= MESSAGE_GROUPING_DELAY_MS) {
+                // Retirer de la file d'attente
+                pendingIncomingMessages.remove(sender)
+
+                if (pending.messages.isEmpty()) continue
+
+                // Combiner les messages si plusieurs
+                val combinedMessage = if (pending.messages.size == 1) {
+                    pending.messages[0]
+                } else {
+                    // Joindre les messages avec " | " pour l'API
+                    logger.info("Regroupement de ${pending.messages.size} messages de $sender")
+                    pending.messages.joinToString(" | ")
+                }
+
+                // Retrouver le sender original (non normalise) - on utilise le premier caractere en majuscule
+                val originalSender = sender.replaceFirstChar { it.uppercase() }
+
+                // Traiter le message (ou le groupe de messages)
+                analyzeAndRespond(originalSender, combinedMessage, playerName)
+            }
+        }
     }
 }
