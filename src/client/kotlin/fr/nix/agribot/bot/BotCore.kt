@@ -56,6 +56,10 @@ object BotCore {
     private const val MAX_REFILLING_CHECKS = 100  // 100 x 100ms = 10 secondes max
     private const val REFILLING_CHECK_INTERVAL_MS = 100
 
+    // Sous-etats pour l'attente de teleportation (non-bloquant)
+    private var teleportWaitRetries = 0
+    private const val MAX_TELEPORT_WAIT_RETRIES = 100  // 100 x 100ms = 10 secondes max
+
     // Sous-etats pour l'ouverture des menus (non-bloquant)
     private var menuOpenStep = 0
     private var menuOpenRetries = 0
@@ -1057,13 +1061,32 @@ object BotCore {
         // Teleportation
         ChatManager.teleportToHome(stationName)
         ChatListener.resetTeleportDetection()
+        teleportWaitRetries = 0  // Reset le compteur d'attente de teleportation
 
         stateData.state = BotState.WAITING_TELEPORT
         waitMs(config.delayAfterTeleport)
     }
 
     private fun handleWaitingTeleport() {
-        // Calculer la distance de teleportation pour ajuster le delai
+        // Attendre que la teleportation soit confirmee par le serveur
+        if (!ChatListener.teleportDetected) {
+            teleportWaitRetries++
+            if (teleportWaitRetries >= MAX_TELEPORT_WAIT_RETRIES) {
+                // Timeout - continuer quand meme avec un warning
+                logger.warn("Timeout attente confirmation teleportation (${teleportWaitRetries * 100}ms) - poursuite sans confirmation")
+            } else {
+                // Attendre encore un peu
+                if (teleportWaitRetries == 1) {
+                    logger.debug("En attente de confirmation de teleportation...")
+                }
+                waitMs(100)  // Verifier toutes les 100ms
+                return
+            }
+        } else if (teleportWaitRetries > 0) {
+            logger.info("Teleportation confirmee apres ${teleportWaitRetries * 100}ms d'attente")
+        }
+
+        // Teleportation confirmee (ou timeout) - calculer la distance pour ajuster le delai
         val positionBefore = stateData.positionBeforeTeleport
         val positionAfter = client.player?.pos
         var extraDelay = 0
