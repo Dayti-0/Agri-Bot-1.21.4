@@ -6,6 +6,7 @@ import fr.nix.agribot.bucket.BucketManager
 import fr.nix.agribot.chat.ChatListener
 import fr.nix.agribot.chat.ChatManager
 import fr.nix.agribot.config.AgriConfig
+import fr.nix.agribot.config.StatsConfig
 import fr.nix.agribot.inventory.InventoryManager
 import fr.nix.agribot.menu.MenuDetector
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
@@ -1456,6 +1457,11 @@ object BotCore {
         stateData.stationsCompleted++
         stateData.currentStationIndex++
 
+        // Enregistrer la station dans les statistiques (sauf si c'est une session de remplissage d'eau seul)
+        if (!stateData.isWaterOnlySession) {
+            StatsConfig.get().recordStation(config.selectedPlant)
+        }
+
         // Apres la premiere station, desactiver le delai supplementaire de debut de session
         if (stateData.isFirstStationOfSession && stateData.stationsCompleted >= 1) {
             stateData.isFirstStationOfSession = false
@@ -1478,7 +1484,10 @@ object BotCore {
                 logger.info("Session remplissage terminee - ${stateData.waterRefillsRemaining} remplissages restants")
                 stateData.state = BotState.DISCONNECTING
             } else {
-                // Session farming terminee, vider les seaux
+                // Session farming terminee, enregistrer dans les statistiques
+                StatsConfig.get().incrementSessionCount(config.selectedPlant)
+                logger.info("Session de farming complete enregistree dans les statistiques")
+                // Vider les seaux
                 stateData.state = BotState.EMPTYING_REMAINING_BUCKETS
             }
         } else {
