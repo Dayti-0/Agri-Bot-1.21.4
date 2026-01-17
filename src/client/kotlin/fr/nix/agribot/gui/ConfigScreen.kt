@@ -5,6 +5,7 @@ import fr.nix.agribot.chat.AutoResponseManager
 import fr.nix.agribot.config.AgriConfig
 import fr.nix.agribot.config.AutoResponseConfig
 import fr.nix.agribot.config.Plants
+import fr.nix.agribot.config.StatsConfig
 import fr.nix.agribot.test.TestActions
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
@@ -204,6 +205,11 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
         addDrawableChild(ButtonWidget.builder(Text.literal("Test AR")) { _ ->
             AutoResponseManager.toggleTestMode()
         }.dimensions(10, 38, 60, 16).build())
+
+        // Bouton Stats
+        addDrawableChild(ButtonWidget.builder(Text.literal("Stats")) { _ ->
+            client?.setScreen(StatsScreen(this))
+        }.dimensions(75, 38, 50, 16).build())
     }
 
     private fun updateVisibleFields() {

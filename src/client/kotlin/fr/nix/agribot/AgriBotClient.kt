@@ -8,6 +8,7 @@ import fr.nix.agribot.chat.AutoResponseManager
 import fr.nix.agribot.config.AgriConfig
 import fr.nix.agribot.config.AutoResponseConfig
 import fr.nix.agribot.config.Plants
+import fr.nix.agribot.config.StatsConfig
 import fr.nix.agribot.input.KeyBindings
 import net.fabricmc.api.ClientModInitializer
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents
@@ -38,6 +39,9 @@ object AgriBotClient : ClientModInitializer {
 
         // Charger la configuration
         config = AgriConfig.load()
+
+        // Charger les statistiques
+        StatsConfig.load()
 
         // Enregistrer les touches
         KeyBindings.register()
