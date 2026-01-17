@@ -66,14 +66,14 @@ class AutoResponseScreen(private val parent: Screen?) : Screen(Text.literal("Agr
         currentY += 55
 
         // === Bouton Activer/Desactiver ===
-        enabledButton = ButtonWidget.builder(Text.literal(if (isEnabled) "Active" else "Desactive")) { _ ->
+        enabledButton = ButtonWidget.builder(Text.literal(if (isEnabled) "ON" else "OFF")) { _ ->
             isEnabled = !isEnabled
             updateEnabledButtonText()
         }.dimensions(centerX - 150, currentY, 145, 20).build()
         addDrawableChild(enabledButton)
 
         // === Bouton Mode Test ===
-        testModeButton = ButtonWidget.builder(Text.literal(if (isTestMode) "Test: ON" else "Test: OFF")) { _ ->
+        testModeButton = ButtonWidget.builder(Text.literal(if (isTestMode) "ON" else "OFF")) { _ ->
             isTestMode = !isTestMode
             updateTestModeButtonText()
         }.dimensions(centerX + 5, currentY, 145, 20).build()
@@ -99,11 +99,11 @@ class AutoResponseScreen(private val parent: Screen?) : Screen(Text.literal("Agr
     }
 
     private fun updateEnabledButtonText() {
-        enabledButton.message = Text.literal(if (isEnabled) "Active" else "Desactive")
+        enabledButton.message = Text.literal(if (isEnabled) "ON" else "OFF")
     }
 
     private fun updateTestModeButtonText() {
-        testModeButton.message = Text.literal(if (isTestMode) "Test: ON" else "Test: OFF")
+        testModeButton.message = Text.literal(if (isTestMode) "ON" else "OFF")
     }
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
@@ -131,7 +131,7 @@ class AutoResponseScreen(private val parent: Screen?) : Screen(Text.literal("Agr
         currentY += 55
 
         // Labels pour les boutons
-        context.drawTextWithShadow(textRenderer, "Systeme:", centerX - 150, currentY - 12, 0x888888)
+        context.drawTextWithShadow(textRenderer, "Auto-Reponse:", centerX - 150, currentY - 12, 0x888888)
         context.drawTextWithShadow(textRenderer, "Mode test:", centerX + 5, currentY - 12, 0x888888)
         currentY += 50
 
