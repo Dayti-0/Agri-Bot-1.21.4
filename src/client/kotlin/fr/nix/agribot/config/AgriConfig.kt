@@ -69,6 +69,29 @@ data class AgriConfig(
     var keyToggleBot: Int = 294,       // F5 par defaut
     var keyFillBuckets: Int = 296,     // F7 par defaut (execute /eau)
 
+    // ==================== PARAMETRES DE RETRY / ROBUSTESSE ====================
+
+    /** Nombre max de tentatives d'ouverture de menu avant echec */
+    var maxMenuOpenAttempts: Int = 3,
+
+    /** Nombre max de tentatives d'ouverture de coffre avant echec */
+    var maxChestOpenAttempts: Int = 3,
+
+    /** Delai entre les tentatives de reconnexion (secondes) */
+    var connectionRetryDelaySeconds: Int = 30,
+
+    /** Timeout pour l'attente de teleportation (secondes) */
+    var teleportTimeoutSeconds: Int = 10,
+
+    /** Timeout pour le remplissage des seaux (secondes) */
+    var bucketRefillTimeoutSeconds: Int = 10,
+
+    /** Nombre max de tentatives de recolte */
+    var maxHarvestingRetries: Int = 5,
+
+    /** Activer la recuperation automatique apres erreur */
+    var autoRecoveryEnabled: Boolean = true,
+
     // Etat du bot (non sauvegarde)
     @Transient var botEnabled: Boolean = false
 ) {
@@ -595,4 +618,21 @@ data class AgriConfig(
     fun getEventPauseEndTime(): Long {
         return System.currentTimeMillis() + (EVENT_PAUSE_SECONDS * 1000L)
     }
+
+    // ==================== FONCTIONS UTILITAIRES POUR LES PARAMETRES DE RETRY ====================
+
+    /**
+     * Convertit le delai de reconnexion en ticks.
+     */
+    fun getConnectionRetryDelayTicks(): Int = connectionRetryDelaySeconds * 20
+
+    /**
+     * Convertit le timeout de teleportation en nombre de retries (100ms par retry).
+     */
+    fun getTeleportTimeoutRetries(): Int = teleportTimeoutSeconds * 10
+
+    /**
+     * Convertit le timeout de remplissage en nombre de checks (100ms par check).
+     */
+    fun getBucketRefillTimeoutChecks(): Int = bucketRefillTimeoutSeconds * 10
 }
