@@ -1,6 +1,8 @@
 package fr.nix.agribot.gui
 
 import fr.nix.agribot.AgriBotClient
+import fr.nix.agribot.bot.BotCore
+import fr.nix.agribot.bot.BotState
 import fr.nix.agribot.chat.AutoResponseManager
 import fr.nix.agribot.config.AgriConfig
 import fr.nix.agribot.config.AutoResponseConfig
@@ -38,6 +40,7 @@ class ConfigScreen(private val parent: Screen? = null) : Screen(Text.literal("Ag
     private var selectedWaterDurationIndex = 0
     private var selectedPlantIndex = 0
     private val plantNames = Plants.getNames()
+    private var isBotActive = false  // True si le bot est actif (empeche le changement de plante)
 
     override fun init() {
         super.init()
@@ -47,20 +50,29 @@ class ConfigScreen(private val parent: Screen? = null) : Screen(Text.literal("Ag
         val startY = 50
 
         // === Section Plante ===
+        // Verifier si le bot est actif (empeche le changement de plante)
+        isBotActive = BotCore.stateData.state != BotState.IDLE
+
         // Trouver l'index de la plante actuelle
         selectedPlantIndex = plantNames.indexOf(config.selectedPlant)
         if (selectedPlantIndex == -1) selectedPlantIndex = 0
 
-        // Bouton fleche gauche
+        // Bouton fleche gauche (desactive si bot actif)
         plantLeftButton = ButtonWidget.builder(Text.literal("<")) { _ ->
-            selectedPlantIndex = if (selectedPlantIndex > 0) selectedPlantIndex - 1 else plantNames.size - 1
+            if (!isBotActive) {
+                selectedPlantIndex = if (selectedPlantIndex > 0) selectedPlantIndex - 1 else plantNames.size - 1
+            }
         }.dimensions(centerX - 150, startY, 20, 20).build()
+        plantLeftButton.active = !isBotActive
         addDrawableChild(plantLeftButton)
 
-        // Bouton fleche droite
+        // Bouton fleche droite (desactive si bot actif)
         plantRightButton = ButtonWidget.builder(Text.literal(">")) { _ ->
-            selectedPlantIndex = (selectedPlantIndex + 1) % plantNames.size
+            if (!isBotActive) {
+                selectedPlantIndex = (selectedPlantIndex + 1) % plantNames.size
+            }
         }.dimensions(centerX - 10, startY, 20, 20).build()
+        plantRightButton.active = !isBotActive
         addDrawableChild(plantRightButton)
 
         // Champ boost
@@ -248,6 +260,11 @@ class ConfigScreen(private val parent: Screen? = null) : Screen(Text.literal("Ag
         // Labels section Plante
         context.drawTextWithShadow(textRenderer, "Plante:", centerX - 150, 40, 0xAAAAAA)
         context.drawTextWithShadow(textRenderer, "Boost %:", centerX + 10, 40, 0xAAAAAA)
+
+        // Message d'avertissement si le bot est actif (changement de plante impossible)
+        if (isBotActive) {
+            context.drawTextWithShadow(textRenderer, "(Bot actif - arretez le bot pour changer)", centerX - 150, 28, 0xFF5555)
+        }
 
         // Afficher le nom de la plante selectionnee au centre des fleches
         val selectedPlant = plantNames[selectedPlantIndex]
