@@ -1138,7 +1138,7 @@ object BotCore {
                 } else {
                     // Home graines non configure - erreur
                     logger.error("Plus de graines ($seedType) et home graines non configure!")
-                    stateData.errorMessage = "Plus de graines ($seedType) - Configurez le home graines"
+                    stateData.setError("Plus de graines ($seedType) - Configurez le home graines", ErrorType.SEED_ERROR)
                     stateData.state = BotState.ERROR
                     return
                 }
@@ -2188,10 +2188,19 @@ object BotCore {
         ActionManager.releaseAllKeys()
 
         if (!isRecoverable) {
-            // Erreur non recuperable - arreter le bot
+            // Erreur non recuperable - deconnecter et arreter le bot
             ChatManager.showActionBar("Erreur fatale: $shortMessage", "c")
             ChatManager.showLocalMessage("Erreur fatale sur '$currentStation': ${stateData.errorMessage}", "c")
-            logger.error("Erreur non recuperable (${errorType.name}) - arret du bot")
+            logger.error("Erreur non recuperable (${errorType.name}) - deconnexion et arret du bot")
+
+            // Se deconnecter proprement du serveur avant d'arreter
+            if (ChatManager.isConnected()) {
+                logger.info("Deconnexion propre du serveur suite a une erreur fatale...")
+                client.execute {
+                    client.world?.disconnect()
+                }
+            }
+
             stop()
             return
         }
