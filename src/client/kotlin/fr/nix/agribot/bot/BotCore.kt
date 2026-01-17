@@ -1992,11 +1992,23 @@ object BotCore {
                 logger.info("Total: $totalStacks stacks")
                 logger.info("========================================")
 
-                ChatManager.showActionBar("$totalStacks stacks de graines recuperes", "a")
-
                 // Reset des variables
                 seedFetchingStep = 0
                 seedFetchingChestOpenAttempts = 0
+
+                // Verifier si on a recupere des graines
+                if (totalStacks == 0) {
+                    // Coffre vide ET pas de graines recuperees -> erreur fatale
+                    logger.error("========================================")
+                    logger.error("ERREUR FATALE: Coffre de graines vide!")
+                    logger.error("Aucune graine recuperee depuis ${config.homeGraines}")
+                    logger.error("========================================")
+                    stateData.setError("Coffre de graines vide (${config.homeGraines}) - Plus de graines disponibles", ErrorType.SEED_ERROR)
+                    stateData.state = BotState.ERROR
+                    return
+                }
+
+                ChatManager.showActionBar("$totalStacks stacks de graines recuperes", "a")
 
                 // Retourner a la station en cours
                 stateData.state = BotState.TELEPORTING
