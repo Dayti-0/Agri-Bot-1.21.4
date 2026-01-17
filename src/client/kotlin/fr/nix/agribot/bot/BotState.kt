@@ -3,6 +3,68 @@ package fr.nix.agribot.bot
 import net.minecraft.util.math.Vec3d
 
 /**
+ * Types d'erreurs specifiques pour un meilleur diagnostic.
+ */
+enum class ErrorType(val description: String, val isRecoverable: Boolean) {
+    /** Pas d'erreur */
+    NONE("Aucune erreur", true),
+
+    /** Erreur de connexion au serveur */
+    NETWORK_ERROR("Erreur reseau", true),
+
+    /** Timeout lors d'une operation */
+    TIMEOUT_ERROR("Delai depasse", true),
+
+    /** Impossible d'ouvrir un menu/coffre */
+    MENU_ERROR("Erreur d'ouverture de menu", true),
+
+    /** Station introuvable ou inaccessible */
+    STATION_ERROR("Erreur de station", true),
+
+    /** Plus de seaux disponibles */
+    BUCKET_ERROR("Erreur de seaux", true),
+
+    /** Plus de graines disponibles */
+    SEED_ERROR("Plus de graines", false),
+
+    /** Erreur de configuration */
+    CONFIG_ERROR("Erreur de configuration", false),
+
+    /** Erreur inconnue/generique */
+    UNKNOWN_ERROR("Erreur inconnue", true);
+
+    companion object {
+        /**
+         * Determine le type d'erreur a partir d'un message d'erreur.
+         */
+        fun fromMessage(message: String): ErrorType {
+            val lowerMessage = message.lowercase()
+            return when {
+                lowerMessage.contains("connexion") || lowerMessage.contains("deconnect") ||
+                    lowerMessage.contains("network") || lowerMessage.contains("reseau") -> NETWORK_ERROR
+
+                lowerMessage.contains("timeout") || lowerMessage.contains("delai") ||
+                    lowerMessage.contains("attente") -> TIMEOUT_ERROR
+
+                lowerMessage.contains("menu") || lowerMessage.contains("coffre") ||
+                    lowerMessage.contains("ouvrir") -> MENU_ERROR
+
+                lowerMessage.contains("station") || lowerMessage.contains("teleport") -> STATION_ERROR
+
+                lowerMessage.contains("seau") || lowerMessage.contains("bucket") ||
+                    lowerMessage.contains("eau") -> BUCKET_ERROR
+
+                lowerMessage.contains("graine") || lowerMessage.contains("seed") -> SEED_ERROR
+
+                lowerMessage.contains("config") -> CONFIG_ERROR
+
+                else -> UNKNOWN_ERROR
+            }
+        }
+    }
+}
+
+/**
  * Etats possibles du bot.
  */
 enum class BotState {
@@ -76,6 +138,8 @@ data class BotStateData(
     var needsWaterRefill: Boolean = false,
     var lastActionTime: Long = 0,
     var errorMessage: String = "",
+    var errorType: ErrorType = ErrorType.NONE,
+    var errorRetryCount: Int = 0,
 
     // Gestion des sessions de remplissage d'eau intermediaires
     /** True si cette session est uniquement pour remplir l'eau (pas de recolte/plantation) */
@@ -122,6 +186,8 @@ data class BotStateData(
         stationsCompleted = 0
         lastActionTime = 0
         errorMessage = ""
+        errorType = ErrorType.NONE
+        errorRetryCount = 0
         isWaterOnlySession = false
         waterRefillsRemaining = 0
         isEventPause = false
@@ -131,5 +197,22 @@ data class BotStateData(
         stateBeforeCrash = null
         cachedStations = emptyList()
         startupEndTime = 0
+    }
+
+    /**
+     * Definit une erreur avec type automatique.
+     */
+    fun setError(message: String, type: ErrorType? = null) {
+        errorMessage = message
+        errorType = type ?: ErrorType.fromMessage(message)
+        errorRetryCount++
+    }
+
+    /**
+     * Efface l'erreur courante.
+     */
+    fun clearError() {
+        errorMessage = ""
+        errorType = ErrorType.NONE
     }
 }

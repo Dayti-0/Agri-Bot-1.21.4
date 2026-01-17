@@ -30,8 +30,7 @@ object BotCore {
 
     val stateData = BotStateData()
 
-    // Delais en ticks (20 ticks = 1 seconde)
-    private const val TICKS_PER_SECOND = 20
+    // Utilisation des constantes centralisees (voir BotConstants.kt)
     private var tickCounter = 0
     private var waitTicks = 0
 
@@ -45,7 +44,6 @@ object BotCore {
     // Sous-etats pour la recolte
     private var harvestingStep = 0
     private var harvestingRetries = 0
-    private const val MAX_HARVESTING_RETRIES = 5
 
     // Sous-etats pour la plantation
     private var plantingStep = 0
@@ -53,38 +51,28 @@ object BotCore {
     // Sous-etats pour le remplissage des seaux
     private var refillingStep = 0
     private var refillingCheckCount = 0
-    private const val MAX_REFILLING_CHECKS = 100  // 100 x 100ms = 10 secondes max
-    private const val REFILLING_CHECK_INTERVAL_MS = 100
 
     // Sous-etats pour l'attente de teleportation (non-bloquant)
     private var teleportWaitRetries = 0
-    private const val MAX_TELEPORT_WAIT_RETRIES = 100  // 100 x 100ms = 10 secondes max
 
     // Sous-etats pour l'ouverture des menus (non-bloquant)
     private var menuOpenStep = 0
     private var menuOpenRetries = 0
-    private const val MAX_MENU_OPEN_RETRIES = 50  // 50 x 100ms = 5 secondes max
-    private const val MENU_STABILIZATION_TICKS = 40  // 2 secondes de stabilisation (40 ticks)
 
     // Compteur de tentatives globales d'ouverture de menu (pour echec definitif)
     private var menuOpenAttempts = 0
-    private const val MAX_MENU_OPEN_ATTEMPTS = 3  // Nombre max de tentatives avant echec definitif
 
     // Compteur de tentatives globales d'ouverture de coffre
     private var chestOpenAttempts = 0
-    private const val MAX_CHEST_OPEN_ATTEMPTS = 3
 
     // Sous-etats pour le versement d'eau (non-bloquant)
     private var waterPouringStep = 0
     private var waterPouringCheckCount = 0
     private var waterBucketsBefore = 0
-    private const val MAX_WATER_POURING_CHECKS = 100  // 100 ticks = 5 secondes max
 
     // Gestion des retries de connexion avec delai anti-spam
     private var connectionRetryCount = 0
     private var connectionRetryDelayTicks = 0
-    // Reconnexion automatique: jamais abandonner, attendre 30 secondes entre chaque tentative
-    private const val CONNECTION_RETRY_DELAY_TICKS = 600  // 30 secondes
 
     // Sous-etats pour la recuperation de seaux depuis le coffre de backup
     private var bucketRecoveryStep = 0
@@ -94,8 +82,6 @@ object BotCore {
 
     // Sous-etats pour la recuperation de graines depuis le coffre de graines
     private var seedFetchingStep = 0
-    private var seedStacksForHotbar = 1    // 1 stack dans la hotbar
-    private var seedStacksForInventory = 5  // 5 stacks dans l'inventaire
     private var seedStacksMovedToHotbar = 0
     private var seedStacksMovedToInventory = 0
     private var seedFetchingChestOpenAttempts = 0
@@ -551,7 +537,7 @@ object BotCore {
      * Attend un certain nombre de millisecondes.
      */
     private fun waitMs(ms: Int) {
-        wait(ms * TICKS_PER_SECOND / 1000)
+        wait(BotConstants.msToTicks(ms))
     }
 
     /**
@@ -575,11 +561,10 @@ object BotCore {
      * Appelee depuis onTick() pour detecter les deconnexions silencieuses.
      */
     private var connectionCheckCounter = 0
-    private const val CONNECTION_CHECK_INTERVAL = 100 // 5 secondes
 
     private fun periodicConnectionCheck(): Boolean {
         connectionCheckCounter++
-        if (connectionCheckCounter >= CONNECTION_CHECK_INTERVAL) {
+        if (connectionCheckCounter >= BotConstants.CONNECTION_CHECK_INTERVAL) {
             connectionCheckCounter = 0
             if (!ChatManager.isConnected()) {
                 logger.warn("Deconnexion detectee lors de la verification periodique")
@@ -741,6 +726,7 @@ object BotCore {
             if (connectionRetryDelayTicks <= 0) {
                 // Delai termine, relancer la connexion
                 connectionRetryCount++
+                stateData.clearError()  // Effacer l'erreur precedente avant retry
                 logger.info("Retry connexion (tentative $connectionRetryCount)...")
                 ServerConnector.reset()
                 if (ChatManager.isConnected()) {
@@ -761,6 +747,7 @@ object BotCore {
         if (ServerConnector.isFinished()) {
             if (ServerConnector.isConnected()) {
                 connectionRetryCount = 0  // Reset pour la prochaine fois
+                stateData.clearError()
 
                 // Verifier si on doit reprendre une session apres un crash
                 if (stateData.isCrashReconnectPause) {
@@ -774,11 +761,13 @@ object BotCore {
                 // Erreur de connexion - toujours retenter (jamais abandonner)
                 val errorContext = "Connexion serveur '${config.serverAddress}' echouee: ${ServerConnector.errorMessage}"
                 logger.error(errorContext)
+                stateData.setError(errorContext, ErrorType.NETWORK_ERROR)
 
-                // Retenter apres un delai de 30 secondes (ne jamais abandonner)
-                logger.info("Retry connexion dans 30 secondes (tentative ${connectionRetryCount + 1})...")
-                ChatManager.showActionBar("Echec connexion - retry dans 30s...", "e")
-                connectionRetryDelayTicks = CONNECTION_RETRY_DELAY_TICKS
+                // Retenter apres le delai configurable (ne jamais abandonner)
+                val retryDelaySeconds = config.connectionRetryDelaySeconds
+                logger.info("Retry connexion dans $retryDelaySeconds secondes (tentative ${connectionRetryCount + 1})...")
+                ChatManager.showActionBar("Echec connexion - retry dans ${retryDelaySeconds}s...", "e")
+                connectionRetryDelayTicks = config.getConnectionRetryDelayTicks()
             }
         }
     }
@@ -874,20 +863,20 @@ object BotCore {
                         if (MenuDetector.isChestOrContainerOpen()) {
                             logger.debug("Coffre '${config.homeCoffre}' detecte - attente stabilisation")
                             menuOpenStep = 2
-                            wait(MENU_STABILIZATION_TICKS)  // Stabilisation
+                            wait(BotConstants.MENU_STABILIZATION_TICKS)  // Stabilisation
                         } else {
                             menuOpenRetries++
-                            if (menuOpenRetries >= MAX_MENU_OPEN_RETRIES) {
+                            if (menuOpenRetries >= BotConstants.MAX_MENU_OPEN_RETRIES) {
                                 chestOpenAttempts++
-                                if (chestOpenAttempts >= MAX_CHEST_OPEN_ATTEMPTS) {
-                                    logger.error("Echec definitif ouverture coffre '${config.homeCoffre}' apres $MAX_CHEST_OPEN_ATTEMPTS tentatives")
-                                    stateData.errorMessage = "Impossible d'ouvrir le coffre '${config.homeCoffre}' apres $MAX_CHEST_OPEN_ATTEMPTS tentatives"
+                                if (chestOpenAttempts >= config.maxChestOpenAttempts) {
+                                    logger.error("Echec definitif ouverture coffre '${config.homeCoffre}' apres ${config.maxChestOpenAttempts} tentatives")
+                                    stateData.setError("Impossible d'ouvrir le coffre '${config.homeCoffre}' apres ${config.maxChestOpenAttempts} tentatives", ErrorType.MENU_ERROR)
                                     stateData.state = BotState.ERROR
                                     menuOpenStep = 0
                                     chestOpenAttempts = 0
                                     return
                                 }
-                                logger.warn("Echec ouverture coffre '${config.homeCoffre}' - Timeout (tentative $chestOpenAttempts/$MAX_CHEST_OPEN_ATTEMPTS)")
+                                logger.warn("Echec ouverture coffre '${config.homeCoffre}' - Timeout (tentative $chestOpenAttempts/${config.maxChestOpenAttempts})")
                                 ChatManager.showActionBar("Echec ouverture coffre - Reessai...", "e")
                                 menuOpenStep = 0
                                 waitMs(1000)  // Reessayer apres 1s
@@ -906,15 +895,15 @@ object BotCore {
                             chestOpenAttempts = 0
                         } else {
                             chestOpenAttempts++
-                            if (chestOpenAttempts >= MAX_CHEST_OPEN_ATTEMPTS) {
+                            if (chestOpenAttempts >= config.maxChestOpenAttempts) {
                                 logger.error("Coffre '${config.homeCoffre}' ferme pendant stabilisation - Echec definitif")
-                                stateData.errorMessage = "Coffre '${config.homeCoffre}' se ferme de maniere repetee"
+                                stateData.setError("Coffre '${config.homeCoffre}' se ferme de maniere repetee", ErrorType.MENU_ERROR)
                                 stateData.state = BotState.ERROR
                                 menuOpenStep = 0
                                 chestOpenAttempts = 0
                                 return
                             }
-                            logger.warn("Coffre '${config.homeCoffre}' ferme pendant stabilisation - Reessai (tentative $chestOpenAttempts/$MAX_CHEST_OPEN_ATTEMPTS)")
+                            logger.warn("Coffre '${config.homeCoffre}' ferme pendant stabilisation - Reessai (tentative $chestOpenAttempts/${config.maxChestOpenAttempts})")
                             menuOpenStep = 0
                             waitMs(500)
                         }
@@ -1069,21 +1058,22 @@ object BotCore {
 
     private fun handleWaitingTeleport() {
         // Attendre que la teleportation soit confirmee par le serveur
+        val maxRetries = config.getTeleportTimeoutRetries()
         if (!ChatListener.teleportDetected) {
             teleportWaitRetries++
-            if (teleportWaitRetries >= MAX_TELEPORT_WAIT_RETRIES) {
+            if (teleportWaitRetries >= maxRetries) {
                 // Timeout - continuer quand meme avec un warning
-                logger.warn("Timeout attente confirmation teleportation (${teleportWaitRetries * 100}ms) - poursuite sans confirmation")
+                logger.warn("Timeout attente confirmation teleportation (${teleportWaitRetries * BotConstants.TELEPORT_CHECK_INTERVAL_MS}ms) - poursuite sans confirmation")
             } else {
                 // Attendre encore un peu
                 if (teleportWaitRetries == 1) {
                     logger.debug("En attente de confirmation de teleportation...")
                 }
-                waitMs(100)  // Verifier toutes les 100ms
+                waitMs(BotConstants.TELEPORT_CHECK_INTERVAL_MS)  // Verifier toutes les 100ms
                 return
             }
         } else if (teleportWaitRetries > 0) {
-            logger.info("Teleportation confirmee apres ${teleportWaitRetries * 100}ms d'attente")
+            logger.info("Teleportation confirmee apres ${teleportWaitRetries * BotConstants.TELEPORT_CHECK_INTERVAL_MS}ms d'attente")
         }
 
         // Teleportation confirmee (ou timeout) - calculer la distance pour ajuster le delai
@@ -1093,7 +1083,7 @@ object BotCore {
 
         // Delai supplementaire pour la premiere station de la session
         if (stateData.isFirstStationOfSession) {
-            extraDelay = 3000  // 3 secondes pour la premiere station
+            extraDelay = BotConstants.FIRST_STATION_EXTRA_DELAY_MS
             logger.info("Premiere station de la session - delai supplementaire de ${extraDelay}ms pour chargement initial")
         } else if (positionBefore != null && positionAfter != null) {
             val distance = positionBefore.distanceTo(positionAfter)
@@ -1102,10 +1092,10 @@ object BotCore {
                 logger.debug("Distance de teleportation: %.2f blocs".format(distance))
             }
 
-            // Si la distance est superieure a 50 blocs, ajouter un delai supplementaire
+            // Si la distance est superieure au seuil, ajouter un delai supplementaire
             // pour laisser le temps au monde de se charger
-            if (distance > 50.0) {
-                extraDelay = 2000  // 2 secondes de plus
+            if (distance > BotConstants.LONG_DISTANCE_THRESHOLD) {
+                extraDelay = BotConstants.LONG_DISTANCE_EXTRA_DELAY_MS
                 logger.info("Teleportation longue distance ({} blocs) - delai supplementaire de {}ms", "%.2f".format(distance), extraDelay)
             }
         }
@@ -1148,7 +1138,7 @@ object BotCore {
                 } else {
                     // Home graines non configure - erreur
                     logger.error("Plus de graines ($seedType) et home graines non configure!")
-                    stateData.errorMessage = "Plus de graines ($seedType) - Configurez le home graines"
+                    stateData.setError("Plus de graines ($seedType) - Configurez le home graines", ErrorType.SEED_ERROR)
                     stateData.state = BotState.ERROR
                     return
                 }
@@ -1196,13 +1186,13 @@ object BotCore {
                 if (MenuDetector.isSimpleMenuOpen()) {
                     // Delai de stabilisation plus long pour la premiere station de la session
                     val stabilizationTicks = if (stateData.isFirstStationOfSession) {
-                        MENU_STABILIZATION_TICKS + 40  // 4 secondes au lieu de 2 pour la premiere station
+                        BotConstants.MENU_STABILIZATION_TICKS + BotConstants.FIRST_STATION_STABILIZATION_EXTRA_TICKS
                     } else {
-                        MENU_STABILIZATION_TICKS  // 2 secondes normalement
+                        BotConstants.MENU_STABILIZATION_TICKS
                     }
 
                     if (stateData.isFirstStationOfSession) {
-                        logger.info("Premiere station '$currentStation' - attente stabilisation prolongee (${stabilizationTicks / 20}s)")
+                        logger.info("Premiere station '$currentStation' - attente stabilisation prolongee (${stabilizationTicks / BotConstants.TICKS_PER_SECOND}s)")
                     } else {
                         logger.debug("Station '$currentStation' detectee - attente stabilisation")
                     }
@@ -1211,18 +1201,18 @@ object BotCore {
                     wait(stabilizationTicks)  // Stabilisation
                 } else {
                     menuOpenRetries++
-                    if (menuOpenRetries >= MAX_MENU_OPEN_RETRIES) {
+                    if (menuOpenRetries >= BotConstants.MAX_MENU_OPEN_RETRIES) {
                         menuOpenAttempts++
-                        if (menuOpenAttempts >= MAX_MENU_OPEN_ATTEMPTS) {
+                        if (menuOpenAttempts >= config.maxMenuOpenAttempts) {
                             // Echec definitif apres plusieurs tentatives
-                            logger.error("Echec definitif ouverture station '$currentStation' apres $MAX_MENU_OPEN_ATTEMPTS tentatives")
-                            stateData.errorMessage = "Impossible d'ouvrir la station '$currentStation' apres $MAX_MENU_OPEN_ATTEMPTS tentatives"
+                            logger.error("Echec definitif ouverture station '$currentStation' apres ${config.maxMenuOpenAttempts} tentatives")
+                            stateData.setError("Impossible d'ouvrir la station '$currentStation' apres ${config.maxMenuOpenAttempts} tentatives", ErrorType.STATION_ERROR)
                             stateData.state = BotState.ERROR
                             menuOpenStep = 0
                             menuOpenAttempts = 0
                             return
                         }
-                        logger.warn("Echec ouverture station '$currentStation' - Timeout (tentative $menuOpenAttempts/$MAX_MENU_OPEN_ATTEMPTS)")
+                        logger.warn("Echec ouverture station '$currentStation' - Timeout (tentative $menuOpenAttempts/${config.maxMenuOpenAttempts})")
                         ChatManager.showActionBar("Echec ouverture '$currentStation' - Reessai...", "e")
                         menuOpenStep = 0
                         waitMs(1000)  // Reessayer apres 1s
@@ -1241,15 +1231,15 @@ object BotCore {
                     menuOpenAttempts = 0  // Reset le compteur de tentatives
                 } else {
                     menuOpenAttempts++
-                    if (menuOpenAttempts >= MAX_MENU_OPEN_ATTEMPTS) {
+                    if (menuOpenAttempts >= config.maxMenuOpenAttempts) {
                         logger.error("Station '$currentStation' fermee pendant stabilisation - Echec definitif")
-                        stateData.errorMessage = "Station '$currentStation' se ferme de maniere repetee"
+                        stateData.setError("Station '$currentStation' se ferme de maniere repetee", ErrorType.STATION_ERROR)
                         stateData.state = BotState.ERROR
                         menuOpenStep = 0
                         menuOpenAttempts = 0
                         return
                     }
-                    logger.warn("Station '$currentStation' fermee pendant stabilisation - Reessai (tentative $menuOpenAttempts/$MAX_MENU_OPEN_ATTEMPTS)")
+                    logger.warn("Station '$currentStation' fermee pendant stabilisation - Reessai (tentative $menuOpenAttempts/${config.maxMenuOpenAttempts})")
                     menuOpenStep = 0
                     waitMs(500)
                 }
@@ -1293,11 +1283,11 @@ object BotCore {
                 } else {
                     // Melon encore present, reessayer
                     harvestingRetries++
-                    if (harvestingRetries >= MAX_HARVESTING_RETRIES) {
-                        logger.warn("Echec recolte apres $MAX_HARVESTING_RETRIES tentatives, on continue")
+                    if (harvestingRetries >= config.maxHarvestingRetries) {
+                        logger.warn("Echec recolte apres ${config.maxHarvestingRetries} tentatives, on continue")
                         harvestingStep = 2
                     } else {
-                        logger.info("Melon encore present au slot $melonSlot, retry ${harvestingRetries}/$MAX_HARVESTING_RETRIES")
+                        logger.info("Melon encore present au slot $melonSlot, retry ${harvestingRetries}/${config.maxHarvestingRetries}")
                         ActionManager.leftClickSlot(melonSlot)
                         waitMs(300)
                     }
@@ -1387,8 +1377,8 @@ object BotCore {
                 }
 
                 // Limite de securite
-                if (BucketManager.state.bucketsUsedThisStation >= 50) {
-                    logger.warn("Limite de seaux atteinte")
+                if (BucketManager.state.bucketsUsedThisStation >= BotConstants.MAX_BUCKETS_PER_STATION) {
+                    logger.warn("Limite de seaux atteinte (${BotConstants.MAX_BUCKETS_PER_STATION})")
                     waterPouringStep = 0
                     stateData.state = BotState.NEXT_STATION
                     return
@@ -1427,7 +1417,7 @@ object BotCore {
                     waitMs(BucketManager.getAdaptiveDelay().toInt())
                 } else {
                     waterPouringCheckCount++
-                    if (waterPouringCheckCount >= MAX_WATER_POURING_CHECKS) {
+                    if (waterPouringCheckCount >= BotConstants.MAX_WATER_POURING_CHECKS) {
                         // Timeout - continuer quand meme
                         logger.warn("Seau non consomme apres timeout - on continue")
                         BucketManager.state.bucketsUsedThisStation++
@@ -1464,7 +1454,7 @@ object BotCore {
                     BucketManager.fillBucketsWithCommand()
                     refillingStep = 2
                     refillingCheckCount = 0  // Reset compteur de verifications
-                    waitMs(REFILLING_CHECK_INTERVAL_MS)  // Premiere verification rapide
+                    waitMs(BotConstants.REFILLING_CHECK_INTERVAL_MS)  // Premiere verification rapide
                 } else {
                     // Les seaux ne sont pas encore en main, reessayer la selection
                     logger.warn("Seaux vides pas encore en main - reessai selection")
@@ -1477,24 +1467,25 @@ object BotCore {
                 refillingCheckCount++
                 BucketManager.refreshState()
 
+                val maxChecks = config.getBucketRefillTimeoutChecks()
                 if (BucketManager.hasWaterBuckets()) {
                     // Les seaux sont remplis!
-                    logger.info("Seaux remplis detectes apres ${refillingCheckCount * REFILLING_CHECK_INTERVAL_MS}ms (${BucketManager.state.waterBucketsCount} seaux d'eau)")
+                    logger.info("Seaux remplis detectes apres ${refillingCheckCount * BotConstants.REFILLING_CHECK_INTERVAL_MS}ms (${BucketManager.state.waterBucketsCount} seaux d'eau)")
                     refillingStep = 0  // Reset pour la prochaine fois
                     refillingCheckCount = 0
                     stateData.state = BotState.FILLING_WATER
-                } else if (refillingCheckCount >= MAX_REFILLING_CHECKS) {
+                } else if (refillingCheckCount >= maxChecks) {
                     // Timeout atteint - continuer quand meme
-                    logger.warn("Timeout verification seaux apres ${MAX_REFILLING_CHECKS * REFILLING_CHECK_INTERVAL_MS}ms - seaux toujours vides, tentative de continuer")
+                    logger.warn("Timeout verification seaux apres ${maxChecks * BotConstants.REFILLING_CHECK_INTERVAL_MS}ms - seaux toujours vides, tentative de continuer")
                     refillingStep = 0
                     refillingCheckCount = 0
                     stateData.state = BotState.FILLING_WATER
                 } else {
                     // Continuer a attendre
                     if (refillingCheckCount % 10 == 0) {
-                        logger.debug("Attente remplissage seaux... (${refillingCheckCount * REFILLING_CHECK_INTERVAL_MS}ms)")
+                        logger.debug("Attente remplissage seaux... (${refillingCheckCount * BotConstants.REFILLING_CHECK_INTERVAL_MS}ms)")
                     }
-                    waitMs(REFILLING_CHECK_INTERVAL_MS)
+                    waitMs(BotConstants.REFILLING_CHECK_INTERVAL_MS)
                 }
             }
         }
@@ -1602,12 +1593,12 @@ object BotCore {
                 if (MenuDetector.isChestOrContainerOpen()) {
                     logger.info("Coffre backup ouvert - stabilisation")
                     bucketRecoveryStep = 3
-                    wait(MENU_STABILIZATION_TICKS)
+                    wait(BotConstants.MENU_STABILIZATION_TICKS)
                 } else {
                     menuOpenRetries++
-                    if (menuOpenRetries >= MAX_MENU_OPEN_RETRIES) {
+                    if (menuOpenRetries >= BotConstants.MAX_MENU_OPEN_RETRIES) {
                         logger.error("Echec ouverture coffre backup - Timeout")
-                        stateData.errorMessage = "Impossible d'ouvrir le coffre backup '${config.homeBackup}'"
+                        stateData.setError("Impossible d'ouvrir le coffre backup '${config.homeBackup}'", ErrorType.MENU_ERROR)
                         stateData.state = BotState.ERROR
                         bucketRecoveryStep = 0
                         return
@@ -1825,7 +1816,7 @@ object BotCore {
         val plantData = config.getSelectedPlantData()
         if (plantData == null) {
             logger.error("Impossible de recuperer les graines - plante non configuree")
-            stateData.errorMessage = "Plante non configuree pour la recuperation de graines"
+            stateData.setError("Plante non configuree pour la recuperation de graines", ErrorType.CONFIG_ERROR)
             stateData.state = BotState.ERROR
             return
         }
@@ -1838,7 +1829,7 @@ object BotCore {
                 logger.info("RECUPERATION DE GRAINES")
                 logger.info("Home graines: ${config.homeGraines}")
                 logger.info("Type de graine: $seedType")
-                logger.info("Objectif: 1 stack hotbar + 5 stacks inventaire")
+                logger.info("Objectif: ${BotConstants.SEED_STACKS_FOR_HOTBAR} stack hotbar + ${BotConstants.SEED_STACKS_FOR_INVENTORY} stacks inventaire")
                 logger.info("========================================")
 
                 // Sauvegarder la position avant teleportation
@@ -1870,19 +1861,19 @@ object BotCore {
                 if (MenuDetector.isChestOrContainerOpen()) {
                     logger.info("Coffre graines ouvert - stabilisation")
                     seedFetchingStep = 3
-                    wait(MENU_STABILIZATION_TICKS)
+                    wait(BotConstants.MENU_STABILIZATION_TICKS)
                 } else {
                     menuOpenRetries++
-                    if (menuOpenRetries >= MAX_MENU_OPEN_RETRIES) {
+                    if (menuOpenRetries >= BotConstants.MAX_MENU_OPEN_RETRIES) {
                         seedFetchingChestOpenAttempts++
-                        if (seedFetchingChestOpenAttempts >= MAX_CHEST_OPEN_ATTEMPTS) {
-                            logger.error("Echec definitif ouverture coffre graines apres $MAX_CHEST_OPEN_ATTEMPTS tentatives")
-                            stateData.errorMessage = "Impossible d'ouvrir le coffre graines '${config.homeGraines}'"
+                        if (seedFetchingChestOpenAttempts >= config.maxChestOpenAttempts) {
+                            logger.error("Echec definitif ouverture coffre graines apres ${config.maxChestOpenAttempts} tentatives")
+                            stateData.setError("Impossible d'ouvrir le coffre graines '${config.homeGraines}'", ErrorType.MENU_ERROR)
                             stateData.state = BotState.ERROR
                             seedFetchingStep = 0
                             return
                         }
-                        logger.warn("Echec ouverture coffre graines - Timeout (tentative $seedFetchingChestOpenAttempts/$MAX_CHEST_OPEN_ATTEMPTS)")
+                        logger.warn("Echec ouverture coffre graines - Timeout (tentative $seedFetchingChestOpenAttempts/${config.maxChestOpenAttempts})")
                         seedFetchingStep = 1
                         waitMs(1000)
                     } else {
@@ -1914,7 +1905,7 @@ object BotCore {
                     return
                 }
 
-                if (seedStacksMovedToHotbar < seedStacksForHotbar) {
+                if (seedStacksMovedToHotbar < BotConstants.SEED_STACKS_FOR_HOTBAR) {
                     // Chercher des graines dans le coffre
                     val seedSlot = InventoryManager.findSeedsSlotInChest(seedType)
                     if (seedSlot < 0) {
@@ -1930,7 +1921,7 @@ object BotCore {
                     if (hotbarSlot < 0) {
                         logger.warn("Hotbar pleine - impossible de mettre les graines")
                         // Continuer avec l'inventaire
-                        seedStacksMovedToHotbar = seedStacksForHotbar
+                        seedStacksMovedToHotbar = BotConstants.SEED_STACKS_FOR_HOTBAR
                         seedFetchingStep = 5
                         wait(4)
                         return
@@ -1949,7 +1940,7 @@ object BotCore {
                 }
             }
             5 -> {
-                // Etape 5: Recuperer 5 stacks pour l'inventaire principal (pas la hotbar)
+                // Etape 5: Recuperer stacks pour l'inventaire principal (pas la hotbar)
                 if (!MenuDetector.isChestOrContainerOpen()) {
                     logger.warn("Coffre graines ferme pendant recuperation inventaire - reouverture")
                     seedFetchingStep = 1
@@ -1957,11 +1948,11 @@ object BotCore {
                     return
                 }
 
-                if (seedStacksMovedToInventory < seedStacksForInventory) {
+                if (seedStacksMovedToInventory < BotConstants.SEED_STACKS_FOR_INVENTORY) {
                     // Chercher des graines dans le coffre
                     val seedSlot = InventoryManager.findSeedsSlotInChest(seedType)
                     if (seedSlot < 0) {
-                        logger.warn("Plus de graines ($seedType) dans le coffre! Recuperes: $seedStacksMovedToInventory/$seedStacksForInventory stacks pour inventaire")
+                        logger.warn("Plus de graines ($seedType) dans le coffre! Recuperes: $seedStacksMovedToInventory/${BotConstants.SEED_STACKS_FOR_INVENTORY} stacks pour inventaire")
                         // Continuer quand meme avec ce qu'on a
                         seedFetchingStep = 6
                         waitMs(300)
@@ -1978,7 +1969,7 @@ object BotCore {
                     }
 
                     // Transfert cible: prendre du coffre et deposer dans l'inventaire principal
-                    logger.info("Transfert graines du coffre (slot $seedSlot) vers inventaire principal (slot $invSlot) (${seedStacksMovedToInventory + 1}/$seedStacksForInventory)")
+                    logger.info("Transfert graines du coffre (slot $seedSlot) vers inventaire principal (slot $invSlot) (${seedStacksMovedToInventory + 1}/${BotConstants.SEED_STACKS_FOR_INVENTORY})")
                     ActionManager.pickAndPlaceSlot(seedSlot, invSlot)
                     seedStacksMovedToInventory++
                     wait(8)
@@ -2001,11 +1992,23 @@ object BotCore {
                 logger.info("Total: $totalStacks stacks")
                 logger.info("========================================")
 
-                ChatManager.showActionBar("$totalStacks stacks de graines recuperes", "a")
-
                 // Reset des variables
                 seedFetchingStep = 0
                 seedFetchingChestOpenAttempts = 0
+
+                // Verifier si on a recupere des graines
+                if (totalStacks == 0) {
+                    // Coffre vide ET pas de graines recuperees -> erreur fatale
+                    logger.error("========================================")
+                    logger.error("ERREUR FATALE: Coffre de graines vide!")
+                    logger.error("Aucune graine recuperee depuis ${config.homeGraines}")
+                    logger.error("========================================")
+                    stateData.setError("Coffre de graines vide (${config.homeGraines}) - Plus de graines disponibles", ErrorType.SEED_ERROR)
+                    stateData.state = BotState.ERROR
+                    return
+                }
+
+                ChatManager.showActionBar("$totalStacks stacks de graines recuperes", "a")
 
                 // Retourner a la station en cours
                 stateData.state = BotState.TELEPORTING
@@ -2160,15 +2163,26 @@ object BotCore {
             "N/A"
         }
 
+        val retryDelaySeconds = config.connectionRetryDelaySeconds
+        val errorType = stateData.errorType
+        val isRecoverable = errorType.isRecoverable && config.autoRecoveryEnabled
+
         val contextInfo = buildString {
             appendLine("========== ERREUR BOTCORE ==========")
+            appendLine("Type: ${errorType.description} (${errorType.name})")
             appendLine("Message: ${stateData.errorMessage}")
             appendLine("Station actuelle: $currentStation (${stateData.currentStationIndex + 1}/${stateData.totalStations})")
             appendLine("Stations completees: ${stateData.stationsCompleted}")
             appendLine("Session eau uniquement: ${stateData.isWaterOnlySession}")
             appendLine("Remplissages restants: ${stateData.waterRefillsRemaining}")
             appendLine("Plante: ${config.selectedPlant}")
-            appendLine("Le bot va retenter dans 30 secondes...")
+            appendLine("Tentative de recuperation: #${stateData.errorRetryCount}")
+            appendLine("Recuperable: ${if (isRecoverable) "OUI" else "NON"}")
+            if (isRecoverable) {
+                appendLine("Le bot va retenter dans $retryDelaySeconds secondes...")
+            } else {
+                appendLine("ERREUR NON RECUPERABLE - Le bot s'arrete.")
+            }
             appendLine("=====================================")
         }
 
@@ -2180,25 +2194,41 @@ object BotCore {
         } else {
             stateData.errorMessage
         }
-        ChatManager.showActionBar("Erreur: $shortMessage - retry 30s", "c")
-
-        // Afficher le message detaille dans le chat local
-        ChatManager.showLocalMessage("Erreur sur '$currentStation': ${stateData.errorMessage} - reconnexion dans 30s", "c")
 
         // Fermer tout menu ouvert et relacher les touches avant deconnexion
         ActionManager.closeScreen()
         ActionManager.releaseAllKeys()
 
+        if (!isRecoverable) {
+            // Erreur non recuperable - deconnecter et arreter le bot
+            ChatManager.showActionBar("Erreur fatale: $shortMessage", "c")
+            ChatManager.showLocalMessage("Erreur fatale sur '$currentStation': ${stateData.errorMessage}", "c")
+            logger.error("Erreur non recuperable (${errorType.name}) - deconnexion et arret du bot")
+
+            // Se deconnecter proprement du serveur avant d'arreter
+            if (ChatManager.isConnected()) {
+                logger.info("Deconnexion propre du serveur suite a une erreur fatale...")
+                client.execute {
+                    client.world?.disconnect()
+                }
+            }
+
+            stop()
+            return
+        }
+
+        ChatManager.showActionBar("Erreur: $shortMessage - retry ${retryDelaySeconds}s", "c")
+        ChatManager.showLocalMessage("Erreur sur '$currentStation': ${stateData.errorMessage} - reconnexion dans ${retryDelaySeconds}s", "c")
+
         // Se deconnecter proprement du serveur pour eviter les problemes
         if (ChatManager.isConnected()) {
-            logger.info("Deconnexion propre du serveur suite a une erreur - reconnexion dans 30 secondes...")
+            logger.info("Deconnexion propre du serveur suite a une erreur - reconnexion dans $retryDelaySeconds secondes...")
             ServerConnector.disconnectAndPrepareReconnect()
         }
 
-        // Au lieu de stop(), on passe en mode reconnexion automatique apres 30 secondes
-        // Le bot ne s'arrete JAMAIS automatiquement (sauf manuellement)
-        logger.info("Passage en mode reconnexion automatique (30 secondes)...")
-        connectionRetryDelayTicks = CONNECTION_RETRY_DELAY_TICKS
+        // Passer en mode reconnexion automatique apres le delai configure
+        logger.info("Passage en mode reconnexion automatique ($retryDelaySeconds secondes)...")
+        connectionRetryDelayTicks = config.getConnectionRetryDelayTicks()
         stateData.isCrashReconnectPause = true  // Pour reprendre la session
         stateData.stateBeforeCrash = BotState.TELEPORTING  // Reprendre au debut de la station
         stateData.state = BotState.CONNECTING
