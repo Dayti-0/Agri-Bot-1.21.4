@@ -3,7 +3,6 @@ package fr.nix.agribot.gui
 import fr.nix.agribot.AgriBotClient
 import fr.nix.agribot.bot.BotCore
 import fr.nix.agribot.bot.BotState
-import fr.nix.agribot.chat.AutoResponseManager
 import fr.nix.agribot.config.AgriConfig
 import fr.nix.agribot.config.AutoResponseConfig
 import fr.nix.agribot.config.Plants
@@ -213,15 +212,10 @@ class ConfigScreen(private val parent: Screen? = null) : Screen(Text.literal("Ag
             client?.setScreen(AutoResponseScreen(this))
         }.dimensions(10, 15, 130, 20).build())
 
-        // Bouton pour activer/desactiver rapidement le mode test
-        addDrawableChild(ButtonWidget.builder(Text.literal("Test AR")) { _ ->
-            AutoResponseManager.toggleTestMode()
-        }.dimensions(10, 38, 60, 16).build())
-
         // Bouton Stats
         addDrawableChild(ButtonWidget.builder(Text.literal("Stats")) { _ ->
             client?.setScreen(StatsScreen(this))
-        }.dimensions(75, 38, 50, 16).build())
+        }.dimensions(10, 38, 50, 16).build())
     }
 
     private fun updateVisibleFields() {
