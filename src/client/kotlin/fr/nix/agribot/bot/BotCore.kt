@@ -289,7 +289,17 @@ object BotCore {
         val targetBuckets = config.targetBucketCount
         val missingBuckets = targetBuckets - currentBucketCount
 
-        if (missingBuckets > 0 && config.homeBackup.isNotBlank()) {
+        // IMPORTANT: Verifier d'abord si une transition matin->jour est en attente
+        // Si oui, les seaux manquants sont dans le coffre HOME (deposes le matin), pas dans le BACKUP
+        val needsTransition = BucketManager.needsModeTransition()
+        val currentMode = BucketManager.getCurrentMode()
+        val isRetrieveTransition = needsTransition &&
+            (currentMode == fr.nix.agribot.bucket.BucketMode.RETRIEVE ||
+             currentMode == fr.nix.agribot.bucket.BucketMode.NORMAL)
+
+        if (missingBuckets > 0 && config.homeBackup.isNotBlank() && !isRetrieveTransition) {
+            // Seaux manquants ET ce n'est PAS une transition matin->jour
+            // -> recuperer depuis le coffre BACKUP (cas crash/perte de seaux)
             logger.warn("========================================")
             logger.warn("SEAUX MANQUANTS DETECTES AU DEMARRAGE")
             logger.warn("Seaux actuels: $currentBucketCount")
@@ -320,8 +330,10 @@ object BotCore {
             bucketsRecovered = 0
             stateData.state = BotState.RECOVERING_BUCKETS
             return
-        } else if (missingBuckets > 0) {
+        } else if (missingBuckets > 0 && !isRetrieveTransition) {
             logger.warn("Seaux manquants ($missingBuckets) mais home backup non configure - on continue quand meme")
+        } else if (isRetrieveTransition) {
+            logger.info("Transition matin->jour detectee - recuperation depuis coffre HOME (pas BACKUP)")
         }
 
         stateData.apply {
@@ -396,7 +408,17 @@ object BotCore {
         val targetBuckets = config.targetBucketCount
         val missingBuckets = targetBuckets - currentBucketCount
 
-        if (missingBuckets > 0 && config.homeBackup.isNotBlank()) {
+        // IMPORTANT: Verifier d'abord si une transition matin->jour est en attente
+        // Si oui, les seaux manquants sont dans le coffre HOME (deposes le matin), pas dans le BACKUP
+        val needsTransition = BucketManager.needsModeTransition()
+        val currentMode = BucketManager.getCurrentMode()
+        val isRetrieveTransition = needsTransition &&
+            (currentMode == fr.nix.agribot.bucket.BucketMode.RETRIEVE ||
+             currentMode == fr.nix.agribot.bucket.BucketMode.NORMAL)
+
+        if (missingBuckets > 0 && config.homeBackup.isNotBlank() && !isRetrieveTransition) {
+            // Seaux manquants ET ce n'est PAS une transition matin->jour
+            // -> recuperer depuis le coffre BACKUP (cas crash/perte de seaux)
             logger.warn("========================================")
             logger.warn("SEAUX MANQUANTS DETECTES APRES CRASH")
             logger.warn("Seaux actuels: $currentBucketCount")
@@ -413,8 +435,10 @@ object BotCore {
             bucketsRecovered = 0
             stateData.state = BotState.RECOVERING_BUCKETS
             return
-        } else if (missingBuckets > 0) {
+        } else if (missingBuckets > 0 && !isRetrieveTransition) {
             logger.warn("Seaux manquants ($missingBuckets) mais home backup non configure - on continue quand meme")
+        } else if (isRetrieveTransition) {
+            logger.info("Transition matin->jour detectee apres crash - recuperation depuis coffre HOME (pas BACKUP)")
         }
 
         // Reset des detections de chat
