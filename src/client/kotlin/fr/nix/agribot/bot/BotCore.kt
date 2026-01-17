@@ -363,7 +363,7 @@ object BotCore {
         if (!ChatManager.isConnected()) {
             ChatManager.showActionBar("Pas connecte - retry dans 30s...", "e")
             logger.warn("Pas connecte au serveur apres reconnexion - nouvelle tentative dans 30 secondes")
-            connectionRetryDelayTicks = CONNECTION_RETRY_DELAY_TICKS
+            connectionRetryDelayTicks = BotConstants.CONNECTION_RETRY_DELAY_TICKS
             stateData.state = BotState.CONNECTING
             return
         }
@@ -599,7 +599,7 @@ object BotCore {
                 // Echec demarrage connexion - retenter apres 30 secondes
                 logger.warn("Erreur demarrage connexion: ${ServerConnector.errorMessage} - retry dans 30s")
                 ChatManager.showActionBar("Echec connexion - retry dans 30s...", "e")
-                connectionRetryDelayTicks = CONNECTION_RETRY_DELAY_TICKS
+                connectionRetryDelayTicks = BotConstants.CONNECTION_RETRY_DELAY_TICKS
                 stateData.state = BotState.CONNECTING
                 return
             }
@@ -834,7 +834,7 @@ object BotCore {
                             return
                         }
 
-                        logger.info("Gestion seaux - Ouverture coffre '${config.homeCoffre}' (tentative ${chestOpenAttempts + 1}/$MAX_CHEST_OPEN_ATTEMPTS)")
+                        logger.info("Gestion seaux - Ouverture coffre '${config.homeCoffre}' (tentative ${chestOpenAttempts + 1}/${BotConstants.MAX_CHEST_OPEN_ATTEMPTS})")
                         ActionManager.rightClick()
                         menuOpenStep = 1
                         menuOpenRetries = 0
@@ -852,7 +852,7 @@ object BotCore {
                             return
                         }
 
-                        logger.info("Gestion seaux - Ouverture coffre '${config.homeCoffre}' (tentative ${chestOpenAttempts + 1}/$MAX_CHEST_OPEN_ATTEMPTS)")
+                        logger.info("Gestion seaux - Ouverture coffre '${config.homeCoffre}' (tentative ${chestOpenAttempts + 1}/${BotConstants.MAX_CHEST_OPEN_ATTEMPTS})")
                         ActionManager.rightClick()
                         menuOpenStep = 1
                         menuOpenRetries = 0
@@ -1175,7 +1175,7 @@ object BotCore {
                 }
 
                 // Clic droit pour ouvrir la station
-                logger.info("Ouverture station '$currentStation' - clic droit (tentative ${menuOpenAttempts + 1}/$MAX_MENU_OPEN_ATTEMPTS)")
+                logger.info("Ouverture station '$currentStation' - clic droit (tentative ${menuOpenAttempts + 1}/${BotConstants.MAX_MENU_OPEN_ATTEMPTS})")
                 ActionManager.rightClick()
                 menuOpenStep = 1
                 menuOpenRetries = 0
@@ -1846,11 +1846,11 @@ object BotCore {
                     logger.info("Coffre graines deja ouvert")
                     MenuDetector.debugCurrentMenu()
                     seedFetchingStep = 3
-                    wait(MENU_STABILIZATION_TICKS)
+                    wait(BotConstants.MENU_STABILIZATION_TICKS)
                     return
                 }
 
-                logger.info("Ouverture coffre graines (tentative ${seedFetchingChestOpenAttempts + 1}/$MAX_CHEST_OPEN_ATTEMPTS)")
+                logger.info("Ouverture coffre graines (tentative ${seedFetchingChestOpenAttempts + 1}/${BotConstants.MAX_CHEST_OPEN_ATTEMPTS})")
                 ActionManager.rightClick()
                 menuOpenRetries = 0
                 seedFetchingStep = 2
@@ -2148,7 +2148,7 @@ object BotCore {
             val errorContext = "Reconnexion au serveur '${config.serverAddress}' impossible: ${ServerConnector.errorMessage}"
             logger.error("$errorContext - retry dans 30s")
             ChatManager.showActionBar("Echec reconnexion - retry dans 30s...", "e")
-            connectionRetryDelayTicks = CONNECTION_RETRY_DELAY_TICKS
+            connectionRetryDelayTicks = BotConstants.CONNECTION_RETRY_DELAY_TICKS
             stateData.state = BotState.CONNECTING
         }
     }
