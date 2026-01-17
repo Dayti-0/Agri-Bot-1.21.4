@@ -17,7 +17,7 @@ import net.minecraft.text.Text
  * Ecran de configuration du bot agricole.
  * Permet de configurer les 30 stations et les homes des coffres.
  */
-class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
+class ConfigScreen(private val parent: Screen? = null) : Screen(Text.literal("AgriBot - Configuration")) {
 
     private val stationFields = mutableListOf<TextFieldWidget>()
     private lateinit var coffreField: TextFieldWidget
@@ -334,4 +334,8 @@ class ConfigScreen : Screen(Text.literal("AgriBot - Configuration")) {
     }
 
     override fun shouldPause(): Boolean = false
+
+    override fun close() {
+        client?.setScreen(parent)
+    }
 }

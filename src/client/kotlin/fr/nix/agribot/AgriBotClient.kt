@@ -9,8 +9,8 @@ import fr.nix.agribot.config.AgriConfig
 import fr.nix.agribot.config.AutoResponseConfig
 import fr.nix.agribot.config.Plants
 import fr.nix.agribot.config.StatsConfig
+import fr.nix.agribot.gui.ConfigScreen
 import fr.nix.agribot.gui.StatsScreen
-import fr.nix.agribot.input.KeyBindings
 import net.fabricmc.api.ClientModInitializer
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents
 import net.fabricmc.fabric.api.client.screen.v1.Screens
@@ -47,9 +47,6 @@ object AgriBotClient : ClientModInitializer {
         // Charger les statistiques
         StatsConfig.load()
 
-        // Enregistrer les touches
-        KeyBindings.register()
-
         // Initialiser le coeur du bot
         BotCore.init()
 
@@ -79,7 +76,6 @@ object AgriBotClient : ClientModInitializer {
 
         logger.info("Mode seaux actuel: ${config.getBucketMode()} (${config.getBucketCount()} seaux)")
         logger.info("==================================================")
-        logger.info("Touches: F6 (toggle bot) | F8 (configuration)")
         logger.info("AgriBot pret!")
     }
 
@@ -95,13 +91,18 @@ object AgriBotClient : ClientModInitializer {
             }
         }
 
-        // Ajouter le bouton Stats sur l'ecran multijoueur
+        // Ajouter les boutons Stats et Config sur l'ecran multijoueur
         ScreenEvents.AFTER_INIT.register { client, screen, scaledWidth, scaledHeight ->
             if (screen is MultiplayerScreen) {
                 val statsButton = ButtonWidget.builder(Text.literal("Stats")) { _ ->
                     client.setScreen(StatsScreen(screen))
                 }.dimensions(8, 26, 50, 20).build()
                 Screens.getButtons(screen).add(statsButton)
+
+                val configButton = ButtonWidget.builder(Text.literal("Config")) { _ ->
+                    client.setScreen(ConfigScreen(screen))
+                }.dimensions(62, 26, 50, 20).build()
+                Screens.getButtons(screen).add(configButton)
             }
         }
     }
