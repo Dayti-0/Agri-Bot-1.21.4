@@ -2039,6 +2039,9 @@ object BotCore {
             logger.info("Ajout de 5 minutes de delai de securite avant session plante")
         }
 
+        // Ajuster la pause pour eviter que la prochaine session tombe pendant le redemarrage serveur
+        pauseSeconds = config.adjustPauseForServerRestart(pauseSeconds)
+
         // OPTIMISATION: Si la prochaine session de remplissage est dans moins de 60 minutes,
         // la faire maintenant au lieu de se deconnecter et se reconnecter
         val mergeThresholdSeconds = AgriConfig.SESSION_MERGE_THRESHOLD_MINUTES * 60

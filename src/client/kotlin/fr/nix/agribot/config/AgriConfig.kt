@@ -440,6 +440,41 @@ data class AgriConfig(
     }
 
     /**
+     * Ajuste la duree de pause pour eviter que la prochaine session tombe pendant le redemarrage serveur.
+     * Si la fin de pause tombe entre 5h40 et 6h40, on etend la pause jusqu'a 6h30.
+     *
+     * @param pauseSeconds Duree de pause initiale en secondes
+     * @return Duree de pause ajustee en secondes
+     */
+    fun adjustPauseForServerRestart(pauseSeconds: Int): Int {
+        val now = java.time.LocalDateTime.now()
+        val pauseEnd = now.plusSeconds(pauseSeconds.toLong())
+
+        val pauseEndHour = pauseEnd.hour
+        val pauseEndMinute = pauseEnd.minute
+        val pauseEndTimeInMinutes = pauseEndHour * 60 + pauseEndMinute
+
+        // Periode de redemarrage: 5h40 (340 min) a 6h40 (400 min)
+        // On veut eviter cette periode, donc on etend jusqu'a 6h30 (390 min)
+        if (pauseEndTimeInMinutes in 340..400) {
+            // La fin de pause tombe pendant le redemarrage
+            val today = pauseEnd.toLocalDate()
+            val restartEnd = java.time.LocalDateTime.of(today, java.time.LocalTime.of(6, 30))
+
+            val adjustedPauseMs = java.time.Duration.between(now, restartEnd).toMillis()
+            val adjustedPauseSeconds = (adjustedPauseMs / 1000).toInt()
+
+            val originalMinutes = pauseSeconds / 60
+            val adjustedMinutes = adjustedPauseSeconds / 60
+            logger.info("Pause ajustee pour eviter redemarrage: ${originalMinutes}min -> ${adjustedMinutes}min (fin a 6h30)")
+
+            return adjustedPauseSeconds
+        }
+
+        return pauseSeconds
+    }
+
+    /**
      * Determine si on doit remplir les stations d'eau cette session.
      * Utilise la duree configuree (waterDurationMinutes).
      */
