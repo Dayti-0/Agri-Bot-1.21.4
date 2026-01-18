@@ -1097,10 +1097,46 @@ object BotCore {
                 waitMs(300)
             }
             5 -> {
-                // Etape 5: Fermer le coffre
+                // Etape 5: Fermer le coffre et verifier si on a assez de seaux
                 ActionManager.closeScreen()
-                bucketManagementStep = 7
                 waitMs(500)
+
+                // Verifier si on est en mode recuperation (RETRIEVE/NORMAL) et si on a assez de seaux
+                if (mode == fr.nix.agribot.bucket.BucketMode.RETRIEVE || mode == fr.nix.agribot.bucket.BucketMode.NORMAL) {
+                    BucketManager.refreshState()
+                    val currentBuckets = BucketManager.state.totalBuckets
+                    val targetBuckets = config.targetBucketCount
+                    val missingBuckets = targetBuckets - currentBuckets
+
+                    if (missingBuckets > 0 && config.homeBackup.isNotBlank()) {
+                        // Pas assez de seaux dans le coffre HOME, aller au coffre BACKUP
+                        logger.warn("========================================")
+                        logger.warn("COFFRE HOME INSUFFISANT - FALLBACK BACKUP")
+                        logger.warn("Seaux actuels: $currentBuckets")
+                        logger.warn("Seaux cibles: $targetBuckets")
+                        logger.warn("Seaux manquants: $missingBuckets")
+                        logger.warn("Fallback vers: ${config.homeBackup}")
+                        logger.warn("========================================")
+
+                        ChatManager.showActionBar("Coffre home insuffisant - Backup ($missingBuckets manquants)", "e")
+
+                        // Configurer la recuperation depuis le coffre BACKUP
+                        bucketRecoveryStep = 0
+                        bucketsToRecover = missingBuckets
+                        bucketsRecovered = 0
+                        bucketManagementStep = 0  // Reset pour la prochaine fois
+
+                        // Sauvegarder la transition avant d'aller au backup
+                        BucketManager.saveTransitionComplete()
+
+                        stateData.state = BotState.RECOVERING_BUCKETS
+                        return
+                    } else if (missingBuckets > 0) {
+                        logger.warn("Seaux manquants ($missingBuckets) apres coffre HOME mais backup non configure - on continue")
+                    }
+                }
+
+                bucketManagementStep = 7
             }
             6 -> {
                 // Etape 6: Recuperation des seaux du coffre (shift-click)
