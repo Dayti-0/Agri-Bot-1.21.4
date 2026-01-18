@@ -49,6 +49,12 @@ object BotConstants {
     /** Nombre max de tentatives de recolte */
     const val MAX_HARVESTING_RETRIES = 5
 
+    /** Nombre de stations consecutives sans melon pour declencher une deconnexion anticipee */
+    const val MAX_CONSECUTIVE_STATIONS_WITHOUT_MELON = 3
+
+    /** Delai de reconnexion en minutes apres une deconnexion anticipee (plantes pas pretes) */
+    const val EARLY_DISCONNECT_RECONNECT_DELAY_MINUTES = 30
+
     // ==================== SEAUX / EAU ====================
 
     /** Nombre max de verifications pour le remplissage des seaux */

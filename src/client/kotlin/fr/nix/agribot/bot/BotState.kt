@@ -178,7 +178,13 @@ data class BotStateData(
 
     // OPTIMISATION: Cache des stations actives (evite recalcul a chaque tick)
     /** Liste des stations actives cachee au debut de la session */
-    var cachedStations: List<String> = emptyList()
+    var cachedStations: List<String> = emptyList(),
+
+    // Validation de recolte (detection plantes pas pretes apres crash serveur)
+    /** Compteur de stations consecutives sans melon (indicateur que les plantes ne sont pas pretes) */
+    var consecutiveStationsWithoutMelon: Int = 0,
+    /** True si la session a ete interrompue car les plantes ne sont pas pretes */
+    var isEarlyDisconnectDueToNoMelon: Boolean = false
 ) {
     fun reset() {
         state = BotState.IDLE
@@ -197,6 +203,8 @@ data class BotStateData(
         stateBeforeCrash = null
         cachedStations = emptyList()
         startupEndTime = 0
+        consecutiveStationsWithoutMelon = 0
+        isEarlyDisconnectDueToNoMelon = false
     }
 
     /**
