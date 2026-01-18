@@ -483,12 +483,22 @@ object BotCore {
             stateData.state != BotState.PAUSED &&
             stateData.state != BotState.DISCONNECTING &&
             stateData.state != BotState.ERROR) {
-            if (!periodicConnectionCheck()) {
-                // Deconnexion detectee - gerer selon l'etat actuel
-                if (stateData.state != BotState.CONNECTING) {
-                    handleUnexpectedDisconnection()
-                    return
+            when (periodicConnectionCheck()) {
+                ConnectionCheckResult.DISCONNECTED -> {
+                    // Deconnexion detectee - gerer selon l'etat actuel
+                    if (stateData.state != BotState.CONNECTING) {
+                        handleUnexpectedDisconnection()
+                        return
+                    }
                 }
+                ConnectionCheckResult.ON_HUB -> {
+                    // Transfert vers le hub detecte - relancer la connexion immediatement
+                    if (stateData.state != BotState.CONNECTING) {
+                        handleHubTransferDetected()
+                        return
+                    }
+                }
+                ConnectionCheckResult.OK -> { /* Tout va bien */ }
             }
         }
 
@@ -564,16 +574,34 @@ object BotCore {
      */
     private var connectionCheckCounter = 0
 
-    private fun periodicConnectionCheck(): Boolean {
+    /**
+     * Resultat de la verification periodique de connexion.
+     */
+    private enum class ConnectionCheckResult {
+        OK,              // Tout est normal
+        DISCONNECTED,    // Deconnecte du serveur
+        ON_HUB           // Transfere vers le hub (boussole detectee)
+    }
+
+    private fun periodicConnectionCheck(): ConnectionCheckResult {
         connectionCheckCounter++
         if (connectionCheckCounter >= BotConstants.CONNECTION_CHECK_INTERVAL) {
             connectionCheckCounter = 0
             if (!ChatManager.isConnected()) {
                 logger.warn("Deconnexion detectee lors de la verification periodique")
-                return false
+                return ConnectionCheckResult.DISCONNECTED
+            }
+
+            // Verifier si on a ete transfere vers le hub (boussole = hub, pas de boussole = serveur de jeu)
+            // Ne pas verifier pendant la phase de connexion car c'est normal d'avoir la boussole
+            if (stateData.state != BotState.CONNECTING &&
+                stateData.state != BotState.IDLE &&
+                InventoryManager.hasCompassInHotbar()) {
+                logger.warn("Boussole detectee dans la hotbar - transfert vers le hub detecte!")
+                return ConnectionCheckResult.ON_HUB
             }
         }
-        return true
+        return ConnectionCheckResult.OK
     }
 
     // ==================== HANDLERS ====================
@@ -716,6 +744,61 @@ object BotCore {
         // Passer en pause
         stateData.state = BotState.PAUSED
         waitMs(AgriConfig.CRASH_RECONNECT_DELAY_SECONDS * 1000)
+    }
+
+    /**
+     * Gere le transfert inattendu vers le hub (detection de boussole dans la hotbar).
+     * Contrairement a une deconnexion, on est toujours connecte mais sur le mauvais serveur.
+     * On relance immediatement le processus de connexion via la boussole (pas de pause de 2 min).
+     */
+    private fun handleHubTransferDetected() {
+        val currentState = stateData.state
+        val stations = stateData.cachedStations
+        val currentStation = if (stateData.currentStationIndex < stations.size) {
+            stations[stateData.currentStationIndex]
+        } else {
+            "N/A"
+        }
+
+        logger.warn("========================================")
+        logger.warn("TRANSFERT VERS LE HUB DETECTE")
+        logger.warn("Etat au moment du transfert: $currentState")
+        logger.warn("Station: $currentStation (${stateData.currentStationIndex + 1}/${stateData.totalStations})")
+        logger.warn("Stations completees: ${stateData.stationsCompleted}")
+        logger.warn("Relancement immediat de la connexion au serveur de jeu...")
+        logger.warn("========================================")
+
+        // Fermer tout menu ouvert et relacher les touches
+        ActionManager.closeScreen()
+        ActionManager.releaseAllKeys()
+
+        // Afficher le message a l'utilisateur
+        ChatManager.showActionBar("Hub detecte! Reconnexion au serveur...", "e")
+
+        // Configurer pour reprendre apres la reconnexion
+        stateData.apply {
+            isCrashReconnectPause = true
+            stateBeforeCrash = currentState
+            // On garde currentStationIndex et les autres donnees de session pour reprendre
+            isFirstStationOfSession = true  // Reinitialiser car on va recharger le monde
+        }
+
+        // Relancer immediatement le processus de connexion (pas de pause)
+        // Le ServerConnector va detecter la boussole et suivre le processus normal
+        logger.info("Relancement de la connexion au serveur de jeu...")
+        ServerConnector.reset()
+        connectionRetryCount = 0
+        connectionRetryDelayTicks = 0
+        connectionSuccessLogged = false
+
+        if (ServerConnector.startConnection()) {
+            stateData.state = BotState.CONNECTING
+        } else {
+            // Echec - attendre un peu avant de reessayer
+            logger.warn("Echec demarrage connexion: ${ServerConnector.errorMessage} - retry dans 5s")
+            connectionRetryDelayTicks = 100  // 5 secondes
+            stateData.state = BotState.CONNECTING
+        }
     }
 
     private fun handleConnecting() {

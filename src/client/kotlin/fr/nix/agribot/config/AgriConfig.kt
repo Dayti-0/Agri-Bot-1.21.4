@@ -440,6 +440,85 @@ data class AgriConfig(
     }
 
     /**
+     * Calcule le chevauchement entre une periode donnee et la fenetre de redemarrage serveur (5h40-6h40).
+     * Les plantes ne poussent pas pendant cette periode.
+     *
+     * @param periodStart Debut de la periode
+     * @param periodEnd Fin de la periode
+     * @return Duree du chevauchement en secondes
+     */
+    private fun calculateRestartOverlap(periodStart: java.time.LocalDateTime, periodEnd: java.time.LocalDateTime): Int {
+        if (periodEnd.isBefore(periodStart) || periodStart == periodEnd) {
+            return 0
+        }
+
+        var totalOverlap = 0
+        var currentDate = periodStart.toLocalDate()
+        val endDate = periodEnd.toLocalDate()
+
+        while (!currentDate.isAfter(endDate)) {
+            val restartStart = java.time.LocalDateTime.of(currentDate, java.time.LocalTime.of(5, 40))
+            val restartEnd = java.time.LocalDateTime.of(currentDate, java.time.LocalTime.of(6, 40))
+
+            val overlapStart = maxOf(periodStart, restartStart)
+            val overlapEnd = minOf(periodEnd, restartEnd)
+
+            if (overlapStart.isBefore(overlapEnd)) {
+                totalOverlap += java.time.Duration.between(overlapStart, overlapEnd).seconds.toInt()
+            }
+
+            currentDate = currentDate.plusDays(1)
+        }
+
+        return totalOverlap
+    }
+
+    /**
+     * Calcule le temps de croissance restant ajuste en tenant compte des redemarrages serveur.
+     * Le serveur redemarre entre 5h40 et 6h40 chaque jour (60 min), et les plantes ne poussent pas.
+     *
+     * @param cycleStartTimeMs Timestamp du debut du cycle en millisecondes
+     * @param baseGrowthTimeSeconds Temps de croissance de base en secondes
+     * @return Temps restant ajuste en secondes jusqu'a la fin de croissance
+     */
+    fun calculateAdjustedRemainingGrowthTime(cycleStartTimeMs: Long, baseGrowthTimeSeconds: Int): Int {
+        val zoneId = java.time.ZoneId.systemDefault()
+        val cycleStart = java.time.LocalDateTime.ofInstant(
+            java.time.Instant.ofEpochMilli(cycleStartTimeMs), zoneId
+        )
+        val now = java.time.LocalDateTime.now()
+
+        // Temps ecoule depuis le debut du cycle
+        val elapsedSeconds = java.time.Duration.between(cycleStart, now).seconds.toInt()
+
+        // Temps de redemarrage passe pendant cette periode (les plantes n'ont pas pousse)
+        val pastRestartTime = calculateRestartOverlap(cycleStart, now)
+
+        // Temps effectif de croissance (temps ecoule - temps de pause serveur)
+        val effectiveGrowthTime = elapsedSeconds - pastRestartTime
+
+        // Temps de croissance restant
+        val remainingGrowthTime = baseGrowthTimeSeconds - effectiveGrowthTime
+
+        if (remainingGrowthTime <= 0) {
+            return maxOf(60, remainingGrowthTime) // Minimum 1 minute
+        }
+
+        // Verifier s'il y a un redemarrage a venir pendant le temps restant
+        val expectedEnd = now.plusSeconds(remainingGrowthTime.toLong())
+        val futureRestartTime = calculateRestartOverlap(now, expectedEnd)
+
+        // Ajouter le temps de redemarrage futur
+        val adjustedRemainingTime = remainingGrowthTime + futureRestartTime
+
+        if (pastRestartTime > 0 || futureRestartTime > 0) {
+            logger.info("Ajustement redemarrage serveur: passe=${pastRestartTime/60}min, futur=${futureRestartTime/60}min, temps restant ajuste=${adjustedRemainingTime/60}min")
+        }
+
+        return adjustedRemainingTime
+    }
+
+    /**
      * Ajuste la duree de pause pour eviter que la prochaine session tombe pendant le redemarrage serveur.
      * Si la fin de pause tombe entre 5h40 et 6h40, on etend la pause jusqu'a 6h30.
      *
@@ -592,9 +671,10 @@ data class AgriConfig(
 
     /**
      * Calcule la duree de la prochaine pause en secondes.
+     * Prend en compte le redemarrage serveur (5h40-6h40) pendant lequel les plantes ne poussent pas.
      *
      * @param waterRefillsRemaining Nombre de remplissages encore a faire avant la recolte
-     * @param cycleStartTime Timestamp du debut du cycle (premiere plantation)
+     * @param cycleStartTime Timestamp du debut du cycle (premiere plantation) en SECONDES
      * @return Duree de la pause en secondes
      */
     fun getNextPauseSeconds(waterRefillsRemaining: Int, cycleStartTime: Long): Int {
@@ -604,12 +684,12 @@ data class AgriConfig(
 
         if (waterRefillsRemaining <= 0) {
             // Plus de remplissage a faire, attendre la fin de la croissance
-            val currentTime = System.currentTimeMillis() / 1000
-            val elapsedSeconds = (currentTime - cycleStartTime).toInt()
-            val remainingGrowthTime = growthTimeSeconds - elapsedSeconds
+            // Utiliser le calcul ajuste qui prend en compte le redemarrage serveur
+            val cycleStartTimeMs = cycleStartTime * 1000 // Convertir en millisecondes
+            val adjustedRemainingTime = calculateAdjustedRemainingGrowthTime(cycleStartTimeMs, growthTimeSeconds)
 
-            logger.info("Prochaine pause: fin de croissance dans ${remainingGrowthTime / 60}min")
-            return maxOf(60, remainingGrowthTime) // Minimum 1 minute
+            logger.info("Prochaine pause: fin de croissance dans ${adjustedRemainingTime / 60}min")
+            return maxOf(60, adjustedRemainingTime) // Minimum 1 minute
         } else {
             // Encore des remplissages a faire, pause = intervalle entre remplissages
             logger.info("Prochaine pause: remplissage eau dans ${waterIntervalSeconds / 60}min ($waterRefillsRemaining restants)")
