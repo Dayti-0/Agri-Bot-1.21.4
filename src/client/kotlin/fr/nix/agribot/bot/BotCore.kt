@@ -314,6 +314,8 @@ object BotCore {
                 waterRefillsRemaining = refillsNeeded
                 cycleStartTime = cycleStart
                 isFirstStationOfSession = true
+                consecutiveStationsWithoutMelon = 0  // Reset du compteur de validation recolte
+                isEarlyDisconnectDueToNoMelon = false
             }
 
             // Configurer la recuperation de seaux
@@ -339,6 +341,8 @@ object BotCore {
             waterRefillsRemaining = refillsNeeded
             cycleStartTime = cycleStart
             isFirstStationOfSession = true  // Reinitialiser pour chaque nouvelle session
+            consecutiveStationsWithoutMelon = 0  // Reset du compteur de validation recolte
+            isEarlyDisconnectDueToNoMelon = false
         }
 
         val sessionType = if (isWaterOnly) "Remplissage eau" else "Session farming"
@@ -1388,6 +1392,8 @@ object BotCore {
                     ActionManager.leftClickSlot(melonSlot)
                     harvestingStep = 1
                     harvestingRetries = 0
+                    // Reset du compteur de stations sans melon car on a trouve un melon
+                    stateData.consecutiveStationsWithoutMelon = 0
                     waitMs(300)
                 } else {
                     // Pas de melon - verifier si c'est une station vide (iron_bars presents)
@@ -1395,6 +1401,29 @@ object BotCore {
                     if (ironBarsSlot >= 0) {
                         // Barreaux de fer sans melon = pas de pousse, on ferme directement
                         logger.info("Pas de melon mais barreaux de fer detectes - pas de recolte necessaire")
+
+                        // Incrementer le compteur de stations sans melon (seulement si c'est une session de recolte)
+                        if (!stateData.isWaterOnlySession && config.maxConsecutiveStationsWithoutMelon > 0) {
+                            stateData.consecutiveStationsWithoutMelon++
+                            logger.info("Stations consecutives sans melon: ${stateData.consecutiveStationsWithoutMelon}/${config.maxConsecutiveStationsWithoutMelon}")
+
+                            // Verifier si on a atteint le seuil
+                            if (stateData.consecutiveStationsWithoutMelon >= config.maxConsecutiveStationsWithoutMelon) {
+                                logger.warn("========================================")
+                                logger.warn("DETECTION: ${stateData.consecutiveStationsWithoutMelon} stations sans melon consecutives")
+                                logger.warn("Les plantes ne sont probablement pas pretes (crash serveur?)")
+                                logger.warn("Deconnexion anticipee - reconnexion dans ${config.earlyDisconnectReconnectDelayMinutes}min")
+                                logger.warn("========================================")
+                                ChatManager.showActionBar("Plantes pas pretes - reconnexion dans ${config.earlyDisconnectReconnectDelayMinutes}min", "e")
+                                stateData.isEarlyDisconnectDueToNoMelon = true
+                                // Fermer le menu et passer au vidage des seaux puis deconnexion
+                                ActionManager.pressEscape()
+                                waitMs(300)
+                                harvestingStep = 0
+                                stateData.state = BotState.EMPTYING_REMAINING_BUCKETS
+                                return
+                            }
+                        }
                         harvestingStep = 2
                     } else {
                         // Ni melon ni barreaux de fer - graine deja plantee, on ferme
@@ -2149,6 +2178,36 @@ object BotCore {
 
     private fun handleDisconnecting() {
         val duration = (System.currentTimeMillis() - stateData.sessionStartTime) / 1000 / 60
+
+        // Cas special: Deconnexion anticipee car plantes pas pretes (stations consecutives sans melon)
+        if (stateData.isEarlyDisconnectDueToNoMelon) {
+            val pauseMinutes = config.earlyDisconnectReconnectDelayMinutes
+            val pauseSeconds = pauseMinutes * 60
+
+            logger.info("========================================")
+            logger.info("DECONNEXION ANTICIPEE - Plantes pas pretes")
+            logger.info("${stateData.consecutiveStationsWithoutMelon} stations consecutives sans melon detectees")
+            logger.info("Pause de ${pauseMinutes} minutes avant nouvelle tentative")
+            logger.info("La prochaine session recommencera a la premiere station")
+            logger.info("========================================")
+
+            ChatManager.showActionBar("Plantes pas pretes - pause ${pauseMinutes}min", "e")
+
+            // Deconnecter du serveur
+            ServerConnector.disconnectAndPrepareReconnect()
+
+            // Calculer et stocker le timestamp de fin de pause
+            stateData.pauseEndTime = System.currentTimeMillis() + (pauseSeconds * 1000L)
+
+            // Reset du compteur pour la prochaine session
+            stateData.consecutiveStationsWithoutMelon = 0
+
+            // Passer en pause
+            stateData.state = BotState.PAUSED
+            waitMs(pauseSeconds * 1000)
+            return
+        }
+
         val sessionType = if (stateData.isWaterOnlySession) "remplissage eau" else "farming"
 
         logger.info("========================================")
@@ -2245,6 +2304,23 @@ object BotCore {
 
             ChatManager.showActionBar("Fin pause - Reconnexion et reprise...", "a")
             // Note: isCrashReconnectPause est reset dans handleConnecting() apres la reprise de session
+        } else if (stateData.isEarlyDisconnectDueToNoMelon) {
+            // Pause due a une detection de plantes pas pretes (stations consecutives sans melon)
+            logger.info("========================================")
+            logger.info("FIN DE PAUSE (PLANTES PAS PRETES) - RECONNEXION")
+            logger.info("Nouvelle tentative - reprise a la premiere station")
+            logger.info("========================================")
+
+            ChatManager.showActionBar("Fin pause - Nouvelle tentative de recolte...", "a")
+
+            // Reset pour recommencer a la premiere station
+            stateData.apply {
+                isEarlyDisconnectDueToNoMelon = false
+                consecutiveStationsWithoutMelon = 0
+                currentStationIndex = 0
+                stationsCompleted = 0
+                isFirstStationOfSession = true
+            }
         } else if (stateData.isEventPause) {
             // Pause due a un event (teleportation forcee)
             if (!stateData.canReconnectAfterEvent) {

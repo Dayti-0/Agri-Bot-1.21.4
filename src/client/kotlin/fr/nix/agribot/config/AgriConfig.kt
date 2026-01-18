@@ -92,6 +92,14 @@ data class AgriConfig(
     /** Activer la recuperation automatique apres erreur */
     var autoRecoveryEnabled: Boolean = true,
 
+    // ==================== VALIDATION DE RECOLTE (DETECTION PLANTES PAS PRETES) ====================
+
+    /** Nombre de stations consecutives sans melon avant deconnexion anticipee (0 = desactive) */
+    var maxConsecutiveStationsWithoutMelon: Int = 3,
+
+    /** Delai de reconnexion en minutes apres detection plantes pas pretes */
+    var earlyDisconnectReconnectDelayMinutes: Int = 30,
+
     // Etat du bot (non sauvegarde)
     @Transient var botEnabled: Boolean = false
 ) {
