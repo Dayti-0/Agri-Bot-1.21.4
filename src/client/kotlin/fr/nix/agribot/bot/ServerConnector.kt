@@ -99,6 +99,9 @@ object ServerConnector {
     /** Flag pour detecter la fermeture du menu apres clic hache */
     private var menuJustClosed = false
 
+    /** Flag pour eviter le spam du message "Connexion etablie" */
+    private var connectionEstablishedLogged = false
+
     /**
      * Demarre le processus de connexion automatique.
      * @return true si le processus a demarre, false si deja en cours ou erreur
@@ -152,6 +155,7 @@ object ServerConnector {
         savedServerAddress = null
         menuJustOpened = false
         menuJustClosed = false
+        connectionEstablishedLogged = false
     }
 
     /**
@@ -433,7 +437,11 @@ object ServerConnector {
 
         // Verifier si on est connecte (player existe)
         if (ChatManager.isConnected()) {
-            logger.info("Connexion etablie - reprise du processus de login")
+            // Logger seulement une fois pour eviter le spam
+            if (!connectionEstablishedLogged) {
+                logger.info("Connexion etablie - reprise du processus de login")
+                connectionEstablishedLogged = true
+            }
             // Attendre un peu avant de renvoyer /login
             if (waitCounter >= 40) { // 2 secondes de stabilisation
                 state = ConnectionState.SENDING_LOGIN
@@ -580,6 +588,7 @@ object ServerConnector {
         reconnectAttempts = 0
         state = ConnectionState.WAITING_RECONNECT
         waitCounter = 0
+        connectionEstablishedLogged = false
         ChatManager.showActionBar("Reconnexion dans 5s (anti-spam)...", "6")
 
         return true

@@ -73,6 +73,7 @@ object BotCore {
     // Gestion des retries de connexion avec delai anti-spam
     private var connectionRetryCount = 0
     private var connectionRetryDelayTicks = 0
+    private var connectionSuccessLogged = false  // Flag pour eviter le spam du message de connexion
 
     // Sous-etats pour la recuperation de seaux depuis le coffre de backup
     private var bucketRecoveryStep = 0
@@ -178,6 +179,7 @@ object BotCore {
             ServerConnector.reset()
             connectionRetryCount = 0
             connectionRetryDelayTicks = 0
+            connectionSuccessLogged = false  // Reset pour nouvelle connexion
             if (ServerConnector.startConnection()) {
                 stateData.state = BotState.CONNECTING
                 return
@@ -592,6 +594,7 @@ object BotCore {
             ServerConnector.reset()
             connectionRetryCount = 0
             connectionRetryDelayTicks = 0
+            connectionSuccessLogged = false  // Reset pour nouvelle connexion
             if (ServerConnector.startConnection()) {
                 stateData.state = BotState.CONNECTING
                 return
@@ -751,10 +754,18 @@ object BotCore {
 
                 // Verifier si on doit reprendre une session apres un crash
                 if (stateData.isCrashReconnectPause) {
-                    logger.info("Connexion reussie - REPRISE de la session apres crash")
+                    // Logger seulement une fois pour eviter le spam
+                    if (!connectionSuccessLogged) {
+                        logger.info("Connexion reussie - REPRISE de la session apres crash")
+                        connectionSuccessLogged = true
+                    }
                     resumeFarmingSession()
                 } else {
-                    logger.info("Connexion automatique reussie - demarrage session farming")
+                    // Logger seulement une fois pour eviter le spam
+                    if (!connectionSuccessLogged) {
+                        logger.info("Connexion automatique reussie - demarrage session farming")
+                        connectionSuccessLogged = true
+                    }
                     startFarmingSession()
                 }
             } else {
@@ -2144,6 +2155,7 @@ object BotCore {
         // Lancer la reconnexion au serveur
         connectionRetryCount = 0
         connectionRetryDelayTicks = 0
+        connectionSuccessLogged = false  // Reset pour nouvelle connexion
         if (ServerConnector.startReconnection()) {
             stateData.state = BotState.CONNECTING
         } else {
@@ -2232,6 +2244,7 @@ object BotCore {
         // Passer en mode reconnexion automatique apres le delai configure
         logger.info("Passage en mode reconnexion automatique ($retryDelaySeconds secondes)...")
         connectionRetryDelayTicks = config.getConnectionRetryDelayTicks()
+        connectionSuccessLogged = false  // Reset pour nouvelle connexion
         stateData.isCrashReconnectPause = true  // Pour reprendre la session
         stateData.stateBeforeCrash = BotState.TELEPORTING  // Reprendre au debut de la station
         stateData.state = BotState.CONNECTING
