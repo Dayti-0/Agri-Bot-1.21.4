@@ -1403,18 +1403,18 @@ object BotCore {
                         logger.info("Pas de melon mais barreaux de fer detectes - pas de recolte necessaire")
 
                         // Incrementer le compteur de stations sans melon (seulement si c'est une session de recolte)
-                        if (!stateData.isWaterOnlySession && config.maxConsecutiveStationsWithoutMelon > 0) {
+                        if (!stateData.isWaterOnlySession) {
                             stateData.consecutiveStationsWithoutMelon++
-                            logger.info("Stations consecutives sans melon: ${stateData.consecutiveStationsWithoutMelon}/${config.maxConsecutiveStationsWithoutMelon}")
+                            logger.info("Stations consecutives sans melon: ${stateData.consecutiveStationsWithoutMelon}/${BotConstants.MAX_CONSECUTIVE_STATIONS_WITHOUT_MELON}")
 
                             // Verifier si on a atteint le seuil
-                            if (stateData.consecutiveStationsWithoutMelon >= config.maxConsecutiveStationsWithoutMelon) {
+                            if (stateData.consecutiveStationsWithoutMelon >= BotConstants.MAX_CONSECUTIVE_STATIONS_WITHOUT_MELON) {
                                 logger.warn("========================================")
                                 logger.warn("DETECTION: ${stateData.consecutiveStationsWithoutMelon} stations sans melon consecutives")
                                 logger.warn("Les plantes ne sont probablement pas pretes (crash serveur?)")
-                                logger.warn("Deconnexion anticipee - reconnexion dans ${config.earlyDisconnectReconnectDelayMinutes}min")
+                                logger.warn("Deconnexion anticipee - reconnexion dans ${BotConstants.EARLY_DISCONNECT_RECONNECT_DELAY_MINUTES}min")
                                 logger.warn("========================================")
-                                ChatManager.showActionBar("Plantes pas pretes - reconnexion dans ${config.earlyDisconnectReconnectDelayMinutes}min", "e")
+                                ChatManager.showActionBar("Plantes pas pretes - reconnexion dans ${BotConstants.EARLY_DISCONNECT_RECONNECT_DELAY_MINUTES}min", "e")
                                 stateData.isEarlyDisconnectDueToNoMelon = true
                                 // Fermer le menu et passer au vidage des seaux puis deconnexion
                                 ActionManager.pressEscape()
@@ -2181,7 +2181,7 @@ object BotCore {
 
         // Cas special: Deconnexion anticipee car plantes pas pretes (stations consecutives sans melon)
         if (stateData.isEarlyDisconnectDueToNoMelon) {
-            val pauseMinutes = config.earlyDisconnectReconnectDelayMinutes
+            val pauseMinutes = BotConstants.EARLY_DISCONNECT_RECONNECT_DELAY_MINUTES
             val pauseSeconds = pauseMinutes * 60
 
             logger.info("========================================")
