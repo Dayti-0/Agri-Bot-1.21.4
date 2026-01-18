@@ -308,12 +308,6 @@ class ConfigScreen(private val parent: Screen? = null) : Screen(Text.literal("Ag
         val stationsTitleY = stationsStartY - LABEL_HEIGHT - 5
         context.drawTextWithShadow(textRenderer, "Stations", centerX - FIELD_WIDTH_LARGE / 2, stationsTitleY, 0xFFFF55)
 
-        // Indicateur de scroll
-        if (scrollOffset > 0 || scrollOffset + visibleStations < 30) {
-            val scrollInfo = "(${scrollOffset + 1}-${scrollOffset + visibleStations}/30)"
-            context.drawTextWithShadow(textRenderer, scrollInfo, centerX + FIELD_WIDTH_LARGE / 2 - 50, stationsTitleY, 0x888888)
-        }
-
         // Numeros des stations
         for (i in 0 until visibleStations) {
             val stationIndex = scrollOffset + i
