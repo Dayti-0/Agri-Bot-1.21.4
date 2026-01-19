@@ -262,6 +262,34 @@ object InventoryManager {
     }
 
     /**
+     * Compte le nombre total de seaux (pleins + vides) dans l'inventaire COMPLET.
+     * Inclut la hotbar (0-8) ET l'inventaire principal (9-35).
+     * Utilise pour verifier la limite de 16 seaux max.
+     */
+    fun countAllBucketsInFullInventory(): Int {
+        val player = client.player ?: return 0
+        var count = 0
+
+        // Hotbar (0-8)
+        for (i in 0..8) {
+            val stack = player.inventory.getStack(i)
+            if (stack.item == Items.WATER_BUCKET || stack.item == Items.BUCKET) {
+                count += stack.count
+            }
+        }
+
+        // Inventaire principal (9-35)
+        for (i in 9..35) {
+            val stack = player.inventory.getStack(i)
+            if (stack.item == Items.WATER_BUCKET || stack.item == Items.BUCKET) {
+                count += stack.count
+            }
+        }
+
+        return count
+    }
+
+    /**
      * Verifie si le joueur est accroupi.
      */
     fun isSneaking(): Boolean {

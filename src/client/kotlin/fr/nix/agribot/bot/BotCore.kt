@@ -1519,6 +1519,16 @@ object BotCore {
 
     private fun handleFillingWater() {
         // Machine d'etat pour le remplissage (non-bloquant)
+
+        // IMPORTANT: Fermer tout menu qui se serait ouvert accidentellement
+        // (peut arriver si le clic droit touche la station au lieu du champ)
+        if (MenuDetector.isMenuOpen()) {
+            logger.warn("Menu ouvert detecte pendant remplissage eau - fermeture")
+            ActionManager.closeScreen()
+            wait(4)  // Attendre que le menu soit ferme
+            return
+        }
+
         when (waterPouringStep) {
             0 -> {
                 // Etape 0: Verifications initiales
@@ -1705,6 +1715,15 @@ object BotCore {
 
     private fun handleEmptyingRemainingBuckets() {
         // Vider tous les seaux d'eau restants dans la derniere station
+
+        // IMPORTANT: Fermer tout menu qui se serait ouvert accidentellement
+        if (MenuDetector.isMenuOpen()) {
+            logger.warn("Menu ouvert detecte pendant vidage seaux - fermeture")
+            ActionManager.closeScreen()
+            wait(4)
+            return
+        }
+
         BucketManager.refreshState()
 
         if (BucketManager.hasWaterBuckets()) {
@@ -1808,6 +1827,20 @@ object BotCore {
                     return
                 }
 
+                // IMPORTANT: Verifier la limite de 16 seaux AVANT de prendre un nouveau stack
+                val totalBucketsBeforeTake = InventoryManager.countAllBucketsInFullInventory()
+                if (totalBucketsBeforeTake >= 16) {
+                    logger.warn("Limite de 16 seaux deja atteinte (actuellement: $totalBucketsBeforeTake) - fin de recuperation")
+                    ActionManager.closeScreen()
+                    bucketRecoveryStep = 0
+                    bucketsRecovered = 0
+                    bucketsToRecover = 0
+                    sourceBucketSlot = -1
+                    stateData.state = BotState.TELEPORTING
+                    waitMs(500)
+                    return
+                }
+
                 // Chercher un slot avec des seaux dans le coffre
                 val bucketSlot = InventoryManager.findFirstBucketSlotInChest()
                 if (bucketSlot < 0) {
@@ -1862,6 +1895,16 @@ object BotCore {
                     // On a assez - remettre le reste dans le coffre
                     logger.debug("Compte atteint ($bucketsRecovered/$bucketsToRecover) - remettre le reste")
                     bucketRecoveryStep = 5
+                    wait(2)
+                    return
+                }
+
+                // IMPORTANT: Verifier la limite de 16 seaux max dans l'inventaire COMPLET
+                // Cela evite le bug ou le bot finit avec 15+16=31 seaux
+                val currentTotalBuckets = InventoryManager.countAllBucketsInFullInventory()
+                if (currentTotalBuckets >= 16) {
+                    logger.warn("Limite de 16 seaux atteinte (actuellement: $currentTotalBuckets) - arret de la recuperation")
+                    bucketRecoveryStep = 5  // Remettre le reste dans le coffre
                     wait(2)
                     return
                 }
