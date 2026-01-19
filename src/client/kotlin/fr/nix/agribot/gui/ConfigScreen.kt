@@ -257,7 +257,7 @@ class ConfigScreen(private val parent: Screen? = null) : Screen(Text.literal("Ag
 
         // Message d'avertissement si le bot est actif (changement de plante impossible)
         if (isBotActive) {
-            context.drawTextWithShadow(textRenderer, "(Bot actif - arretez le bot pour changer)", centerX - 150, 28, 0xFF5555)
+            context.drawTextWithShadow(textRenderer, "Bot actif - stop le bot pour changer de plante", centerX - 150, 28, 0xFF5555)
         }
 
         // Afficher le nom de la plante selectionnee au centre des fleches
