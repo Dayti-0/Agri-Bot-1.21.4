@@ -38,7 +38,7 @@ class StatsScreen(private val parent: Screen?) : Screen(Text.literal("AgriBot - 
         // Calculer le scroll maximum
         val stats = StatsConfig.get()
         val plantCount = stats.plantStats.size
-        val totalLines = 15 + (plantCount * 4)  // Estimation des lignes
+        val totalLines = 15 + (plantCount * 2)  // Estimation des lignes (1 ligne par plante)
         val visibleLines = (height - 100) / lineHeight
         maxScrollOffset = maxOf(0, totalLines - visibleLines)
     }
@@ -172,21 +172,9 @@ class StatsScreen(private val parent: Screen?) : Screen(Text.literal("AgriBot - 
             for ((plantName, pStats) in sortedPlants) {
                 if (currentY > 15 && currentY < height - 60) {
                     val profitColor = if (pStats.profit >= 0) 0x55FF55 else 0xFF5555
-                    context.drawTextWithShadow(textRenderer, plantName, centerX - 100, currentY, 0xFFFFFF)
-                    context.drawTextWithShadow(
-                        textRenderer,
-                        "${pStats.sessions}s / ${pStats.stations}st",
-                        centerX + 30,
-                        currentY,
-                        0xAAAAAA
-                    )
-                }
-                currentY += lineHeight
-
-                if (currentY > 15 && currentY < height - 60) {
-                    val profitColor = if (pStats.profit >= 0) 0x55FF55 else 0xFF5555
-                    context.drawTextWithShadow(textRenderer, "  Profit:", centerX - 90, currentY, 0x888888)
-                    context.drawTextWithShadow(textRenderer, "${stats.formatNumber(pStats.profit)} $", centerX + 30, currentY, profitColor)
+                    // Format: Plante Xs/Yst / profit $
+                    val line = "$plantName ${pStats.sessions}s/${pStats.stations}st / ${stats.formatNumber(pStats.profit)} $"
+                    context.drawTextWithShadow(textRenderer, line, centerX - 100, currentY, profitColor)
                 }
                 currentY += lineHeight + 2
             }
