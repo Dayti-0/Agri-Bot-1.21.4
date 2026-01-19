@@ -142,6 +142,12 @@ object PreConnectionTimer {
     }
 
     /**
+     * Retourne le timestamp de fin du timer (pour afficher l'heure de connexion).
+     * @return Timestamp en millisecondes, ou 0 si pas actif
+     */
+    fun getEndTime(): Long = timerEndTime
+
+    /**
      * Formate le temps restant pour l'affichage.
      */
     fun formatRemainingTime(): String {

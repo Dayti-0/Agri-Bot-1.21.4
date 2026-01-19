@@ -153,6 +153,16 @@ object BotCore {
             return
         }
 
+        // Verifier que la configuration est complete avant de demarrer
+        val startupErrors = config.getStartupErrors()
+        if (startupErrors.isNotEmpty()) {
+            val errorMsg = startupErrors.first()
+            logger.warn("Impossible de demarrer: $errorMsg")
+            ChatManager.showActionBar("Config incomplete: $errorMsg", "c")
+            config.botEnabled = false
+            return
+        }
+
         // Verifier la connexion au serveur Minecraft
         if (!ChatManager.isConnected()) {
             ChatManager.showActionBar("Pas connecte au serveur!", "c")

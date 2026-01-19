@@ -79,12 +79,22 @@ object AutoStartManager {
 
             // Attendre 3 secondes (60 ticks) pour que la connexion se stabilise
             if (waitCounter >= 60) {
-                logger.info("Demarrage automatique du bot...")
                 autoStartEnabled = false
                 waitCounter = 0
 
-                // Activer et demarrer le bot
+                // Verifier que la configuration est complete avant de demarrer
                 val config = AgriBotClient.config
+                val startupErrors = config.getStartupErrors()
+                if (startupErrors.isNotEmpty()) {
+                    val errorMsg = startupErrors.first()
+                    logger.warn("Demarrage automatique annule: $errorMsg")
+                    ChatManager.showActionBar("Config incomplete: $errorMsg", "c")
+                    return
+                }
+
+                logger.info("Demarrage automatique du bot...")
+
+                // Activer et demarrer le bot
                 config.botEnabled = true
                 BotCore.startSession()
             }
