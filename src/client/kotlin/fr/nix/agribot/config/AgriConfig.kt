@@ -325,6 +325,70 @@ data class AgriConfig(
     }
 
     /**
+     * Verifie si au moins un home est configure.
+     * Les homes sont: homeCoffre, homeBackup, homeGraines, homeMouvement
+     * Au moins un doit etre non vide pour que le bot puisse fonctionner.
+     */
+    fun hasAtLeastOneHome(): Boolean {
+        return homeCoffre.isNotBlank() ||
+               homeBackup.isNotBlank() ||
+               homeGraines.isNotBlank() ||
+               homeMouvement.isNotBlank()
+    }
+
+    /**
+     * Retourne la liste des erreurs de configuration qui empechent le demarrage du bot.
+     * Tous les parametres de la page config sont obligatoires sauf:
+     * - Les homes: au moins 1 parmi les 4 doit etre configure
+     * - Les stations: au moins 1 parmi les 30 doit etre configuree
+     * @return Liste des messages d'erreur, vide si la config est valide pour le demarrage
+     */
+    fun getStartupErrors(): List<String> {
+        val errors = mutableListOf<String>()
+
+        // Mot de passe obligatoire
+        if (loginPassword.isBlank()) {
+            errors.add("Mot de passe manquant")
+        }
+
+        // Plante obligatoire
+        if (selectedPlant.isBlank()) {
+            errors.add("Plante non selectionnee")
+        }
+
+        // Boost doit etre un nombre valide (>= 0)
+        if (growthBoost < 0) {
+            errors.add("Boost invalide")
+        }
+
+        // Au moins 1 station obligatoire
+        if (getActiveStationCount() == 0) {
+            errors.add("0 stations")
+        }
+
+        // Au moins 1 home obligatoire
+        if (!hasAtLeastOneHome()) {
+            errors.add("Aucun home configure")
+        }
+
+        // Verifier l'auto-reponse si activee
+        val autoResponseConfig = AutoResponseConfig.get()
+        if (autoResponseConfig.enabled && !autoResponseConfig.isApiConfigured()) {
+            errors.add("Auto-reponse: cle API manquante")
+        }
+
+        return errors
+    }
+
+    /**
+     * Verifie si la configuration est prete pour demarrer le bot.
+     * @return true si le bot peut demarrer, false sinon
+     */
+    fun isReadyToStart(): Boolean {
+        return getStartupErrors().isEmpty()
+    }
+
+    /**
      * Recupere la liste des stations actives (non vides).
      */
     fun getActiveStations(): List<String> {
