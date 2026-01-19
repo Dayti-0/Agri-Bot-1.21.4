@@ -256,10 +256,14 @@ data class StatsConfig(
     }
 
     /**
-     * Formate un nombre avec separateurs de milliers.
+     * Formate un nombre avec separateurs de milliers et virgule decimale.
      */
     fun formatNumber(value: Double): String {
-        return String.format("%,.1f", value).replace(",", " ")
+        // Utiliser locale US pour avoir des virgules comme separateurs de milliers
+        // puis remplacer les virgules par des espaces et le point par une virgule
+        return String.format(java.util.Locale.US, "%,.1f", value)
+            .replace(",", " ")
+            .replace(".", ",")
     }
 
     /**
