@@ -181,7 +181,7 @@ class ConfigScreen(private val parent: Screen? = null) : Screen(Text.literal("Ag
         val testButtonWidth = 100
 
         // Test transition matin (deposer seaux)
-        val testMatinButton = ButtonWidget.builder(Text.literal("Test Matin")) { _ ->
+        val testMatinButton = ButtonWidget.builder(Text.literal("Matin")) { _ ->
             close()
             TestActions.testTransitionMatin()
         }.dimensions(testButtonX, 15, testButtonWidth, 16).build()
@@ -189,7 +189,7 @@ class ConfigScreen(private val parent: Screen? = null) : Screen(Text.literal("Ag
         addDrawableChild(testMatinButton)
 
         // Test transition apres-midi (recuperer seaux)
-        val testApremButton = ButtonWidget.builder(Text.literal("Test Aprem")) { _ ->
+        val testApremButton = ButtonWidget.builder(Text.literal("Aprem")) { _ ->
             close()
             TestActions.testTransitionApresMidi()
         }.dimensions(testButtonX, 33, testButtonWidth, 16).build()
@@ -197,7 +197,7 @@ class ConfigScreen(private val parent: Screen? = null) : Screen(Text.literal("Ag
         addDrawableChild(testApremButton)
 
         // Test remplissage eau
-        val testEauButton = ButtonWidget.builder(Text.literal("Test /eau")) { _ ->
+        val testEauButton = ButtonWidget.builder(Text.literal("/eau")) { _ ->
             close()
             TestActions.testRemplissageEau()
         }.dimensions(testButtonX, 51, testButtonWidth, 16).build()
@@ -205,7 +205,7 @@ class ConfigScreen(private val parent: Screen? = null) : Screen(Text.literal("Ag
         addDrawableChild(testEauButton)
 
         // Test planter (TP + recolte + plantation)
-        val testPlanterButton = ButtonWidget.builder(Text.literal("Test Planter")) { _ ->
+        val testPlanterButton = ButtonWidget.builder(Text.literal("Planter")) { _ ->
             close()
             TestActions.testPlanter()
         }.dimensions(testButtonX, 69, testButtonWidth, 16).build()
