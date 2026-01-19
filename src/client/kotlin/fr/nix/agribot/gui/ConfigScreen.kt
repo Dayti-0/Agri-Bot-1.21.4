@@ -283,9 +283,9 @@ class ConfigScreen(private val parent: Screen? = null) : Screen(Text.literal("Ag
         }
 
         // Label section Coffre
-        context.drawTextWithShadow(textRenderer, "Coffre:", centerX - 150, 70, 0xAAAAAA)
-        context.drawTextWithShadow(textRenderer, "Backup:", centerX - 48, 70, 0xAAAAAA)
-        context.drawTextWithShadow(textRenderer, "Graines:", centerX + 55, 70, 0xAAAAAA)
+        context.drawTextWithShadow(textRenderer, "Coffre Transition", centerX - 150, 70, 0xAAAAAA)
+        context.drawTextWithShadow(textRenderer, "Coffre backup", centerX - 48, 70, 0xAAAAAA)
+        context.drawTextWithShadow(textRenderer, "Home Graines", centerX + 55, 70, 0xAAAAAA)
 
         // Label section Mouvement
         context.drawTextWithShadow(textRenderer, "Home mouvement (fix msg):", centerX - 100, 98, 0xAAAAAA)
