@@ -181,28 +181,36 @@ class ConfigScreen(private val parent: Screen? = null) : Screen(Text.literal("Ag
         val testButtonWidth = 100
 
         // Test transition matin (deposer seaux)
-        addDrawableChild(ButtonWidget.builder(Text.literal("Test Matin")) { _ ->
+        val testMatinButton = ButtonWidget.builder(Text.literal("Matin")) { _ ->
             close()
             TestActions.testTransitionMatin()
-        }.dimensions(testButtonX, 15, testButtonWidth, 16).build())
+        }.dimensions(testButtonX, 15, testButtonWidth, 16).build()
+        testMatinButton.active = !isBotActive
+        addDrawableChild(testMatinButton)
 
         // Test transition apres-midi (recuperer seaux)
-        addDrawableChild(ButtonWidget.builder(Text.literal("Test Aprem")) { _ ->
+        val testApremButton = ButtonWidget.builder(Text.literal("Aprem")) { _ ->
             close()
             TestActions.testTransitionApresMidi()
-        }.dimensions(testButtonX, 33, testButtonWidth, 16).build())
+        }.dimensions(testButtonX, 33, testButtonWidth, 16).build()
+        testApremButton.active = !isBotActive
+        addDrawableChild(testApremButton)
 
         // Test remplissage eau
-        addDrawableChild(ButtonWidget.builder(Text.literal("Test /eau")) { _ ->
+        val testEauButton = ButtonWidget.builder(Text.literal("/eau")) { _ ->
             close()
             TestActions.testRemplissageEau()
-        }.dimensions(testButtonX, 51, testButtonWidth, 16).build())
+        }.dimensions(testButtonX, 51, testButtonWidth, 16).build()
+        testEauButton.active = !isBotActive
+        addDrawableChild(testEauButton)
 
         // Test planter (TP + recolte + plantation)
-        addDrawableChild(ButtonWidget.builder(Text.literal("Test Planter")) { _ ->
+        val testPlanterButton = ButtonWidget.builder(Text.literal("Planter")) { _ ->
             close()
             TestActions.testPlanter()
-        }.dimensions(testButtonX, 69, testButtonWidth, 16).build())
+        }.dimensions(testButtonX, 69, testButtonWidth, 16).build()
+        testPlanterButton.active = !isBotActive
+        addDrawableChild(testPlanterButton)
 
         // === Bouton Auto-Reponse (en haut a gauche) ===
         val autoResponseConfig = AutoResponseConfig.get()
@@ -257,7 +265,7 @@ class ConfigScreen(private val parent: Screen? = null) : Screen(Text.literal("Ag
 
         // Message d'avertissement si le bot est actif (changement de plante impossible)
         if (isBotActive) {
-            context.drawTextWithShadow(textRenderer, "(Bot actif - arretez le bot pour changer)", centerX - 150, 28, 0xFF5555)
+            context.drawTextWithShadow(textRenderer, "Bot actif - stop le bot pour changer de plante", centerX - 150, 28, 0xFF5555)
         }
 
         // Afficher le nom de la plante selectionnee au centre des fleches
@@ -275,9 +283,9 @@ class ConfigScreen(private val parent: Screen? = null) : Screen(Text.literal("Ag
         }
 
         // Label section Coffre
-        context.drawTextWithShadow(textRenderer, "Coffre:", centerX - 150, 70, 0xAAAAAA)
-        context.drawTextWithShadow(textRenderer, "Backup:", centerX - 48, 70, 0xAAAAAA)
-        context.drawTextWithShadow(textRenderer, "Graines:", centerX + 55, 70, 0xAAAAAA)
+        context.drawTextWithShadow(textRenderer, "Coffre Transition", centerX - 150, 70, 0xAAAAAA)
+        context.drawTextWithShadow(textRenderer, "Coffre backup", centerX - 48, 70, 0xAAAAAA)
+        context.drawTextWithShadow(textRenderer, "Home Graines", centerX + 55, 70, 0xAAAAAA)
 
         // Label section Mouvement
         context.drawTextWithShadow(textRenderer, "Home mouvement (fix msg):", centerX - 100, 98, 0xAAAAAA)
