@@ -94,9 +94,17 @@ data class AutoResponseConfig(
     }
 
     /**
-     * Verifie si l'API Mistral est configuree.
+     * Retourne la cle API effective (config ou variable d'environnement MISTRAL_API_KEY).
+     */
+    fun getEffectiveApiKey(): String {
+        if (mistralApiKey.isNotBlank()) return mistralApiKey
+        return System.getenv("MISTRAL_API_KEY") ?: ""
+    }
+
+    /**
+     * Verifie si l'API Mistral est configuree (config ou variable d'environnement).
      */
     fun isApiConfigured(): Boolean {
-        return mistralApiKey.isNotBlank()
+        return getEffectiveApiKey().isNotBlank()
     }
 }
