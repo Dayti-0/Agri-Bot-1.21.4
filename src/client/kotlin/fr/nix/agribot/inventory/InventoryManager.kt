@@ -136,13 +136,6 @@ object InventoryManager {
     }
 
     /**
-     * Selectionne le slot des graines (slot 9 = touche 0).
-     */
-    fun selectSeedsSlot() {
-        selectSlot(9)
-    }
-
-    /**
      * Recupere le slot actuellement selectionne (0-8).
      */
     fun getSelectedSlot(): Int {
