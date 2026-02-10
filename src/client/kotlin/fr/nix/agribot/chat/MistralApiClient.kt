@@ -18,7 +18,9 @@ import java.util.concurrent.Executors
 object MistralApiClient {
     private val logger = LoggerFactory.getLogger("agribot")
     private val gson = Gson()
-    private val executor = Executors.newSingleThreadExecutor()
+    private val executor = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "agribot-mistral").apply { isDaemon = true }
+    }
 
     private const val API_URL = "https://api.mistral.ai/v1/chat/completions"
     private const val MODEL = "mistral-small-latest"
@@ -124,7 +126,7 @@ Exemple: CONFUSION - demande de clarification"""
                     logger.info("[API] Message a analyser: \"$message\"")
                 }
 
-                val response = callMistralApi(config.mistralApiKey, systemPrompt, userPrompt)
+                val response = callMistralApi(config.getEffectiveApiKey(), systemPrompt, userPrompt)
 
                 if (config.testModeActive) {
                     logger.info("[API] Reponse classification: \"$response\"")
@@ -169,7 +171,7 @@ Exemple: CONFUSION - demande de clarification"""
                     logger.info("[API] Prompt systeme: ${systemPrompt.take(200)}...")
                 }
 
-                val response = callMistralApi(config.mistralApiKey, systemPrompt, userPrompt)
+                val response = callMistralApi(config.getEffectiveApiKey(), systemPrompt, userPrompt)
 
                 if (config.testModeActive) {
                     logger.info("[API] Reponse brute: \"$response\"")
@@ -403,12 +405,12 @@ Ne reponds pas, ce message n'est pas pour toi."""
 
             val responseCode = connection.responseCode
             if (responseCode != 200) {
-                val errorBody = connection.errorStream?.bufferedReader()?.readText() ?: "No error body"
+                val errorBody = connection.errorStream?.use { it.bufferedReader().readText() } ?: "No error body"
                 logger.error("Erreur API Mistral ($responseCode): $errorBody")
                 throw RuntimeException("Erreur API: $responseCode")
             }
 
-            val responseBody = connection.inputStream.bufferedReader().readText()
+            val responseBody = connection.inputStream.use { it.bufferedReader().readText() }
             val jsonResponse = JsonParser.parseString(responseBody).asJsonObject
 
             return jsonResponse

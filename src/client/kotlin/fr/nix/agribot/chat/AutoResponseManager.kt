@@ -95,7 +95,10 @@ object AutoResponseManager {
      * Initialise le gestionnaire.
      */
     fun init() {
-        scheduler = Executors.newSingleThreadScheduledExecutor()
+        scheduler?.shutdownNow()
+        scheduler = Executors.newSingleThreadScheduledExecutor { r ->
+            Thread(r, "agribot-autoresponse").apply { isDaemon = true }
+        }
 
         // Tache periodique pour envoyer les reponses en attente
         scheduler?.scheduleAtFixedRate({

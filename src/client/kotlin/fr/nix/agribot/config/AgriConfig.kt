@@ -221,34 +221,20 @@ data class AgriConfig(
                     } else {
                         // Configuration invalide, tenter la restauration
                         logger.warn("Configuration invalide detectee, tentative de restauration depuis backup")
-                        val restored = restoreFromBackup()
-                        if (restored != null) {
-                            instance = restored
-                            // Sauvegarder la config restauree
-                            instance!!.save()
-                        } else {
+                        instance = (restoreFromBackup() ?: AgriConfig().also {
                             logger.warn("Restauration impossible, utilisation des valeurs par defaut")
-                            instance = AgriConfig()
-                            instance!!.save()
-                        }
+                        }).also { it.save() }
                     }
                 } catch (e: Exception) {
                     logger.error("Erreur lors du chargement de la config: ${e.message}")
                     // Tenter la restauration depuis le backup
-                    val restored = restoreFromBackup()
-                    if (restored != null) {
-                        instance = restored
-                        instance!!.save()
-                    } else {
+                    instance = (restoreFromBackup() ?: AgriConfig().also {
                         logger.warn("Utilisation des valeurs par defaut")
-                        instance = AgriConfig()
-                        instance!!.save()
-                    }
+                    }).also { it.save() }
                 }
             } else {
                 logger.info("Aucune configuration trouvee, creation des valeurs par defaut")
-                instance = AgriConfig()
-                instance!!.save()
+                instance = AgriConfig().also { it.save() }
             }
 
             return instance!!
@@ -433,9 +419,8 @@ data class AgriConfig(
      * Reste du temps: 16 seaux
      */
     fun getBucketCount(): Int {
-        val hour = java.time.LocalTime.now().hour
-        val minute = java.time.LocalTime.now().minute
-        val timeInMinutes = hour * 60 + minute
+        val now = java.time.LocalTime.now()
+        val timeInMinutes = now.hour * 60 + now.minute
 
         // 6h30 = 390 min, 11h30 = 690 min
         return if (timeInMinutes in 390..690) 1 else 16
@@ -445,9 +430,8 @@ data class AgriConfig(
      * Determine le mode de gestion des seaux selon l'heure.
      */
     fun getBucketMode(): String {
-        val hour = java.time.LocalTime.now().hour
-        val minute = java.time.LocalTime.now().minute
-        val timeInMinutes = hour * 60 + minute
+        val now = java.time.LocalTime.now()
+        val timeInMinutes = now.hour * 60 + now.minute
 
         return when {
             timeInMinutes in 390..690 -> "drop"      // 6h30-11h30: jeter les seaux
@@ -476,9 +460,8 @@ data class AgriConfig(
      * Verifie si on est dans la periode de redemarrage serveur (5h40-6h40).
      */
     fun isServerRestartPeriod(): Boolean {
-        val hour = java.time.LocalTime.now().hour
-        val minute = java.time.LocalTime.now().minute
-        val timeInMinutes = hour * 60 + minute
+        val now = java.time.LocalTime.now()
+        val timeInMinutes = now.hour * 60 + now.minute
 
         // 5h40 = 340 min, 6h40 = 400 min
         return timeInMinutes in 340..400

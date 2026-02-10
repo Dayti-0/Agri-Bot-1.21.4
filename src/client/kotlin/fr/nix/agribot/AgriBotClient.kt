@@ -152,6 +152,33 @@ object AgriBotClient : ClientModInitializer {
     }
 
     /**
+     * Formate un compte a rebours en texte lisible avec l'heure de fin.
+     * @param remainingMs millisecondes restantes
+     * @param endEpochMs timestamp de fin (pour afficher l'heure)
+     * @return "Xh XXm XXs (HH:MM)" ou null si remainingMs <= 0
+     */
+    private fun formatCountdown(remainingMs: Long, endEpochMs: Long): String? {
+        if (remainingMs <= 0) return null
+        val totalSeconds = remainingMs / 1000
+        val hours = totalSeconds / 3600
+        val minutes = (totalSeconds % 3600) / 60
+        val seconds = totalSeconds % 60
+
+        val endTime = java.time.LocalDateTime.ofInstant(
+            java.time.Instant.ofEpochMilli(endEpochMs),
+            java.time.ZoneId.systemDefault()
+        )
+        val hourStr = String.format("%02d:%02d", endTime.hour, endTime.minute)
+
+        val timeStr = when {
+            hours > 0 -> "${hours}h ${minutes.toString().padStart(2, '0')}m ${seconds.toString().padStart(2, '0')}s"
+            minutes > 0 -> "${minutes}m ${seconds.toString().padStart(2, '0')}s"
+            else -> "${seconds}s"
+        }
+        return "$timeStr ($hourStr)"
+    }
+
+    /**
      * Met a jour le cache du timer.
      */
     private fun updateTimerCache(currentTime: Long) {
@@ -161,7 +188,6 @@ object AgriBotClient : ClientModInitializer {
         // Verifier d'abord si le timer de pre-connexion est actif
         if (PreConnectionTimer.isActive) {
             val preConnText = PreConnectionTimer.formatRemainingTime()
-            // Ajouter l'heure de fin pour le timer de pre-connexion aussi
             val preConnEndTime = PreConnectionTimer.getEndTime()
             if (preConnEndTime > 0) {
                 val endHour = java.time.LocalDateTime.ofInstant(
@@ -178,11 +204,9 @@ object AgriBotClient : ClientModInitializer {
         }
 
         if (!config.botEnabled) {
-            // Utiliser la nouvelle fonction pour obtenir toutes les erreurs de config
             val errors = config.getStartupErrors()
 
             if (errors.isNotEmpty()) {
-                // Afficher la premiere erreur (priorite: mot de passe > stations > homes)
                 cachedTimerText = "AgriBot: ${errors.first()}"
                 cachedTimerColor = 0xFF5555
             } else {
@@ -194,25 +218,9 @@ object AgriBotClient : ClientModInitializer {
             when (BotCore.stateData.state) {
                 BotState.WAITING_STARTUP -> {
                     val remainingMs = BotCore.stateData.startupEndTime - currentTime
-                    if (remainingMs > 0) {
-                        val totalSeconds = remainingMs / 1000
-                        val hours = totalSeconds / 3600
-                        val minutes = (totalSeconds % 3600) / 60
-                        val seconds = totalSeconds % 60
-
-                        // Calculer l'heure de fin
-                        val endTime = java.time.LocalDateTime.ofInstant(
-                            java.time.Instant.ofEpochMilli(BotCore.stateData.startupEndTime),
-                            java.time.ZoneId.systemDefault()
-                        )
-                        val hourStr = String.format("%02d:%02d", endTime.hour, endTime.minute)
-
-                        val timeStr = when {
-                            hours > 0 -> "${hours}h ${minutes.toString().padStart(2, '0')}m ${seconds.toString().padStart(2, '0')}s"
-                            minutes > 0 -> "${minutes}m ${seconds.toString().padStart(2, '0')}s"
-                            else -> "${seconds}s"
-                        }
-                        cachedTimerText = "Demarrage dans: $timeStr ($hourStr)"
+                    val countdown = formatCountdown(remainingMs, BotCore.stateData.startupEndTime)
+                    if (countdown != null) {
+                        cachedTimerText = "Demarrage dans: $countdown"
                         cachedTimerColor = 0xFFFF55  // Jaune
                     } else {
                         cachedTimerText = "Demarrage..."
@@ -221,25 +229,9 @@ object AgriBotClient : ClientModInitializer {
                 }
                 BotState.PAUSED -> {
                     val remainingMs = BotCore.stateData.pauseEndTime - currentTime
-                    if (remainingMs > 0) {
-                        val totalSeconds = remainingMs / 1000
-                        val hours = totalSeconds / 3600
-                        val minutes = (totalSeconds % 3600) / 60
-                        val seconds = totalSeconds % 60
-
-                        // Calculer l'heure de fin
-                        val endTime = java.time.LocalDateTime.ofInstant(
-                            java.time.Instant.ofEpochMilli(BotCore.stateData.pauseEndTime),
-                            java.time.ZoneId.systemDefault()
-                        )
-                        val hourStr = String.format("%02d:%02d", endTime.hour, endTime.minute)
-
-                        val timeStr = when {
-                            hours > 0 -> "${hours}h ${minutes.toString().padStart(2, '0')}m ${seconds.toString().padStart(2, '0')}s"
-                            minutes > 0 -> "${minutes}m ${seconds.toString().padStart(2, '0')}s"
-                            else -> "${seconds}s"
-                        }
-                        cachedTimerText = "Prochaine session: $timeStr ($hourStr)"
+                    val countdown = formatCountdown(remainingMs, BotCore.stateData.pauseEndTime)
+                    if (countdown != null) {
+                        cachedTimerText = "Prochaine session: $countdown"
                     } else {
                         cachedTimerText = "Reconnexion en cours..."
                         cachedTimerColor = 0xFFFF55

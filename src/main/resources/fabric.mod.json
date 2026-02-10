@@ -3,13 +3,12 @@
 	"id": "agribot",
 	"version": "${version}",
 	"name": "Agri Bot",
-	"description": "This is an example description! Tell everyone what your mod is about!",
+	"description": "Bot de farming automatique pour Minecraft",
 	"authors": [
-		"Me!"
+		"Nix"
 	],
 	"contact": {
-		"homepage": "https://fabricmc.net/",
-		"sources": "https://github.com/FabricMC/fabric-example-mod"
+		"sources": "https://github.com/Dayti-0/Agri-Bot-1.21.4"
 	},
 	"license": "CC0-1.0",
 	"icon": "assets/agribot/icon.png",
