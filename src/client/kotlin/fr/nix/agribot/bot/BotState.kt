@@ -184,7 +184,9 @@ data class BotStateData(
     /** Compteur de stations consecutives sans melon (indicateur que les plantes ne sont pas pretes) */
     var consecutiveStationsWithoutMelon: Int = 0,
     /** True si la session a ete interrompue car les plantes ne sont pas pretes */
-    var isEarlyDisconnectDueToNoMelon: Boolean = false
+    var isEarlyDisconnectDueToNoMelon: Boolean = false,
+    /** True si au moins un melon a ete trouve dans cette session (pour eviter faux positifs au premier lancement) */
+    var melonFoundThisSession: Boolean = false
 ) {
     fun reset() {
         state = BotState.IDLE
@@ -205,6 +207,7 @@ data class BotStateData(
         startupEndTime = 0
         consecutiveStationsWithoutMelon = 0
         isEarlyDisconnectDueToNoMelon = false
+        melonFoundThisSession = false
     }
 
     /**

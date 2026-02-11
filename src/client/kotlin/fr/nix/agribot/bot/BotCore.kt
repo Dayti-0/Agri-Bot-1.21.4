@@ -333,6 +333,7 @@ object BotCore {
                 isFirstStationOfSession = true
                 consecutiveStationsWithoutMelon = 0  // Reset du compteur de validation recolte
                 isEarlyDisconnectDueToNoMelon = false
+                melonFoundThisSession = false
             }
 
             // Configurer la recuperation de seaux
@@ -369,6 +370,7 @@ object BotCore {
                 isFirstStationOfSession = true
                 consecutiveStationsWithoutMelon = 0
                 isEarlyDisconnectDueToNoMelon = false
+                melonFoundThisSession = false
             }
 
             // Configurer le depot de seaux excedentaires
@@ -399,6 +401,7 @@ object BotCore {
             isFirstStationOfSession = true  // Reinitialiser pour chaque nouvelle session
             consecutiveStationsWithoutMelon = 0  // Reset du compteur de validation recolte
             isEarlyDisconnectDueToNoMelon = false
+            melonFoundThisSession = false  // Reset pour cette session
         }
 
         val sessionType = if (isWaterOnly) "Remplissage eau" else "Session farming"
@@ -1488,6 +1491,7 @@ object BotCore {
                     harvestingStep = 1
                     harvestingRetries = 0
                     // Reset du compteur de stations sans melon car on a trouve un melon
+                    stateData.melonFoundThisSession = true
                     stateData.consecutiveStationsWithoutMelon = 0
                     waitMs(300)
                 } else {
@@ -1497,8 +1501,10 @@ object BotCore {
                         // Barreaux de fer sans melon = pas de pousse, on ferme directement
                         logger.info("Pas de melon mais barreaux de fer detectes - pas de recolte necessaire")
 
-                        // Incrementer le compteur de stations sans melon (seulement si c'est une session de recolte)
-                        if (!stateData.isWaterOnlySession) {
+                        // Incrementer le compteur de stations sans melon
+                        // UNIQUEMENT si un melon a deja ete trouve dans cette session
+                        // (au premier lancement, c'est normal qu'il n'y ait pas de melon - les graines n'ont pas pousse)
+                        if (!stateData.isWaterOnlySession && stateData.melonFoundThisSession) {
                             stateData.consecutiveStationsWithoutMelon++
                             logger.info("Stations consecutives sans melon: ${stateData.consecutiveStationsWithoutMelon}/${BotConstants.MAX_CONSECUTIVE_STATIONS_WITHOUT_MELON}")
                         }
@@ -2444,6 +2450,7 @@ object BotCore {
 
             // Reset du compteur pour la prochaine session
             stateData.consecutiveStationsWithoutMelon = 0
+            stateData.melonFoundThisSession = false
 
             // Passer en pause
             stateData.state = BotState.PAUSED
@@ -2560,6 +2567,7 @@ object BotCore {
             stateData.apply {
                 isEarlyDisconnectDueToNoMelon = false
                 consecutiveStationsWithoutMelon = 0
+                melonFoundThisSession = false
                 currentStationIndex = 0
                 stationsCompleted = 0
                 isFirstStationOfSession = true
