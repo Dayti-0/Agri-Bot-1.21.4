@@ -83,6 +83,8 @@ object ServerConnector {
     private const val MAX_RECONNECT_ATTEMPTS = 3
 
     /** Etats qui necessitent une connexion active (joueur + network handler) */
+    // Note: WAITING_GAME_SERVER n'est PAS inclus car le transfert proxy (BungeeCord/Velocity)
+    // provoque une deconnexion breve qui est un comportement normal attendu
     private val STATES_REQUIRING_CONNECTION = setOf(
         ConnectionState.SENDING_LOGIN,
         ConnectionState.WAITING_AFTER_LOGIN,
@@ -91,7 +93,6 @@ object ServerConnector {
         ConnectionState.OPENING_COMPASS_MENU,
         ConnectionState.WAITING_COMPASS_MENU,
         ConnectionState.CLICKING_NETHERITE_AXE,
-        ConnectionState.WAITING_GAME_SERVER,
         ConnectionState.TELEPORTING_MOVEMENT_HOME,
         ConnectionState.WAITING_TELEPORT_MOVEMENT,
         ConnectionState.MOVING_FORWARD,
@@ -353,11 +354,15 @@ object ServerConnector {
 
     private fun handleWaitingGameServer() {
         // Attendre la connexion au serveur de jeu
+        // Note: Pendant le transfert proxy (BungeeCord/Velocity), la connexion est brievement
+        // perdue (client.player devient null). C'est un comportement NORMAL et attendu.
         waitCounter++
 
-        // Verifier si le menu s'est ferme (signe de teleportation vers le serveur)
-        if (!MenuDetector.isMenuOpen()) {
-            // Menu vient de se fermer - reset le compteur
+        val isConnected = ChatManager.isConnected()
+
+        // Verifier si le menu s'est ferme ou si la connexion a ete perdue (signe de transfert proxy)
+        if (!MenuDetector.isMenuOpen() || (!isConnected && menuJustClosed)) {
+            // Menu vient de se fermer ou connexion perdue pendant le transfert
             if (!menuJustClosed) {
                 menuJustClosed = true
                 waitCounter = 0
@@ -365,12 +370,20 @@ object ServerConnector {
                 ChatManager.showActionBar("Chargement du monde...", "6")
             }
 
-            // Attendre 7 secondes pour que le monde soit bien charge
+            // Attendre 7 secondes ET que la connexion soit retablie
+            // Pendant le transfert proxy, la connexion revient apres ~1 seconde
             if (waitCounter >= 140) { // 7 secondes apres fermeture du menu
-                logger.info("Connexion au serveur de jeu reussie!")
-                menuJustClosed = false
-                // Passer au mouvement initial ou directement connecte
-                transitionToMovementOrConnected()
+                if (isConnected) {
+                    logger.info("Connexion au serveur de jeu reussie!")
+                    menuJustClosed = false
+                    // Passer au mouvement initial ou directement connecte
+                    transitionToMovementOrConnected()
+                } else if (waitCounter >= 600) { // Timeout 30 secondes si la connexion ne revient pas
+                    logger.warn("Timeout - connexion non retablie apres transfert serveur")
+                    errorMessage = "Timeout attente transfert serveur"
+                    state = ConnectionState.ERROR
+                    menuJustClosed = false
+                }
             }
         } else if (waitCounter >= 400) { // Timeout 20 secondes si menu reste ouvert
             logger.warn("Timeout connexion au serveur de jeu")
