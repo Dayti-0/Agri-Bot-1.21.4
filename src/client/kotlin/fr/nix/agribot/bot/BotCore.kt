@@ -136,11 +136,20 @@ object BotCore {
                 // Si on n'est pas deja en mode reconnexion, declencher une reconnexion
                 if (currentState != BotState.PAUSED &&
                     currentState != BotState.DISCONNECTING &&
-                    currentState != BotState.CONNECTING &&
                     currentState != BotState.IDLE) {
-                    // On etait en pleine session - declencher reconnexion automatique
-                    logger.info("Deconnexion inattendue depuis l'etat $currentState - demarrage reconnexion automatique")
-                    handleUnexpectedDisconnection()
+                    if (currentState == BotState.CONNECTING) {
+                        // Deconnexion pendant la phase de connexion - reset ServerConnector
+                        // pour eviter qu'il continue a executer des commandes sans joueur
+                        logger.warn("Deconnexion detectee pendant la connexion (ServerConnector etat: ${ServerConnector.state}) - reset et retry")
+                        ActionManager.releaseAllKeys()  // Relacher les touches (peut etre en mouvement)
+                        ServerConnector.reset()
+                        connectionRetryDelayTicks = BotConstants.CONNECTION_RETRY_DELAY_TICKS
+                        // Rester en CONNECTING - le retry timer va se declencher
+                    } else {
+                        // On etait en pleine session - declencher reconnexion automatique
+                        logger.info("Deconnexion inattendue depuis l'etat $currentState - demarrage reconnexion automatique")
+                        handleUnexpectedDisconnection()
+                    }
                 }
             }
         }
@@ -574,7 +583,14 @@ object BotCore {
             when (periodicConnectionCheck()) {
                 ConnectionCheckResult.DISCONNECTED -> {
                     // Deconnexion detectee - gerer selon l'etat actuel
-                    if (stateData.state != BotState.CONNECTING) {
+                    if (stateData.state == BotState.CONNECTING) {
+                        // Pendant la connexion: reset ServerConnector et planifier un retry
+                        logger.warn("Deconnexion periodique detectee pendant CONNECTING (ServerConnector: ${ServerConnector.state}) - reset et retry")
+                        ServerConnector.reset()
+                        if (connectionRetryDelayTicks <= 0) {
+                            connectionRetryDelayTicks = BotConstants.CONNECTION_RETRY_DELAY_TICKS
+                        }
+                    } else {
                         handleUnexpectedDisconnection()
                         return
                     }
