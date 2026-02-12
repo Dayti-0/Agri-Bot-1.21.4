@@ -117,6 +117,10 @@ object BotCore {
      * Quand le bot est actif, ferme TOUJOURS l'ecran et revient au menu serveurs
      * pour permettre la reconnexion automatique.
      */
+    // Flag pour eviter que periodicConnectionCheck() et handleDisconnectedScreen()
+    // traitent la meme deconnexion dans le meme tick
+    private var disconnectionHandledThisTick = false
+
     private fun handleDisconnectedScreen() {
         val currentScreen = client.currentScreen
 
@@ -137,6 +141,9 @@ object BotCore {
                 if (currentState != BotState.PAUSED &&
                     currentState != BotState.DISCONNECTING &&
                     currentState != BotState.IDLE) {
+                    // Marquer la deconnexion comme geree pour eviter double-handling
+                    disconnectionHandledThisTick = true
+
                     if (currentState == BotState.CONNECTING) {
                         // Deconnexion pendant la phase de connexion - reset ServerConnector
                         // pour eviter qu'il continue a executer des commandes sans joueur
@@ -223,21 +230,36 @@ object BotCore {
     private fun startFarmingSession() {
         // Verifier la connexion
         if (!ChatManager.isConnected()) {
+            logger.warn("startFarmingSession: pas connecte au serveur")
             ChatManager.showActionBar("Pas connecte au serveur!", "c")
+            // Ne pas retourner sans changer d'etat - le handleConnecting() gerera le retry
             return
         }
 
         // Verifier les stations et cacher la liste (OPTIMISATION)
         val stations = config.getActiveStations()
         if (stations.isEmpty()) {
+            logger.error("startFarmingSession: aucune station configuree")
             ChatManager.showActionBar("Aucune station configuree!", "c")
+            stateData.setError("Aucune station configuree", ErrorType.CONFIG_ERROR)
+            stateData.state = BotState.ERROR
             return
         }
         stateData.cachedStations = stations  // Cache pour eviter recalcul a chaque tick
 
         // Verifier periode de redemarrage serveur
         if (config.isServerRestartPeriod()) {
-            ChatManager.showActionBar("Redemarrage serveur en cours, attente...", "e")
+            // Calculer le temps d'attente et se deconnecter proprement
+            val waitTimeMs = config.getTimeUntilRestartEnd()
+            val waitTimeSeconds = (waitTimeMs / 1000).toInt().coerceAtLeast(60)
+            logger.info("Periode de redemarrage serveur - deconnexion et pause de ${waitTimeSeconds / 60} minutes")
+            ChatManager.showActionBar("Redemarrage serveur - pause ${waitTimeSeconds / 60}min", "e")
+
+            // Deconnecter et attendre la fin du redemarrage
+            ServerConnector.disconnectAndPrepareReconnect()
+            stateData.pauseEndTime = System.currentTimeMillis() + (waitTimeSeconds * 1000L)
+            stateData.state = BotState.PAUSED
+            waitMs(waitTimeSeconds * 1000)
             return
         }
 
@@ -300,10 +322,12 @@ object BotCore {
         }
 
         // Verifier si des seaux manquent et si le home backup est configure
-        val currentBucketCount = BucketManager.state.totalBuckets
+        // IMPORTANT: Utiliser le comptage de l'inventaire COMPLET (hotbar + inventaire principal)
+        // et non pas seulement la hotbar, car les seaux d'eau ne stackent pas et debordent
+        // dans l'inventaire principal quand il y en a plus de 9
         val fullInventoryBucketCount = InventoryManager.countAllBucketsInFullInventory()
         val targetBuckets = config.targetBucketCount
-        val missingBuckets = targetBuckets - currentBucketCount
+        val missingBuckets = targetBuckets - fullInventoryBucketCount
         // Seaux en EXCES = plus de 16 (maximum absolu) - c'est un BUG, pas une transition normale
         val excessBuckets = fullInventoryBucketCount - 16
 
@@ -320,7 +344,7 @@ object BotCore {
             // -> recuperer depuis le coffre BACKUP (cas crash/perte de seaux)
             logger.warn("========================================")
             logger.warn("SEAUX MANQUANTS DETECTES AU DEMARRAGE")
-            logger.warn("Seaux actuels: $currentBucketCount")
+            logger.warn("Seaux actuels (inventaire complet): $fullInventoryBucketCount")
             logger.warn("Seaux cibles: $targetBuckets")
             logger.warn("Seaux manquants: $missingBuckets")
             logger.warn("Recuperation depuis: ${config.homeBackup}")
@@ -468,10 +492,12 @@ object BotCore {
         BucketManager.logState()
 
         // Verifier si des seaux manquent et si le home backup est configure
-        val currentBucketCount = BucketManager.state.totalBuckets
+        // IMPORTANT: Utiliser le comptage de l'inventaire COMPLET (hotbar + inventaire principal)
+        // et non pas seulement la hotbar, car les seaux d'eau ne stackent pas et debordent
+        // dans l'inventaire principal quand il y en a plus de 9
         val fullInventoryBucketCount = InventoryManager.countAllBucketsInFullInventory()
         val targetBuckets = config.targetBucketCount
-        val missingBuckets = targetBuckets - currentBucketCount
+        val missingBuckets = targetBuckets - fullInventoryBucketCount
         // Seaux en EXCES = plus de 16 (maximum absolu) - c'est un BUG
         val excessBuckets = fullInventoryBucketCount - 16
 
@@ -488,7 +514,7 @@ object BotCore {
             // -> recuperer depuis le coffre BACKUP (cas crash/perte de seaux)
             logger.warn("========================================")
             logger.warn("SEAUX MANQUANTS DETECTES APRES CRASH")
-            logger.warn("Seaux actuels: $currentBucketCount")
+            logger.warn("Seaux actuels (inventaire complet): $fullInventoryBucketCount")
             logger.warn("Seaux cibles: $targetBuckets")
             logger.warn("Seaux manquants: $missingBuckets")
             logger.warn("Recuperation depuis: ${config.homeBackup}")
@@ -569,6 +595,9 @@ object BotCore {
     private fun onTick() {
         tickCounter++
 
+        // Reset du flag de deconnexion geree par handleDisconnectedScreen()
+        disconnectionHandledThisTick = false
+
         // OPTIMISATION: Early return si en attente (evite toutes les verifications)
         if (waitTicks > 0) {
             waitTicks--
@@ -576,7 +605,9 @@ object BotCore {
         }
 
         // Verification periodique de la connexion (sauf si en pause, deconnexion ou idle)
-        if (stateData.state != BotState.IDLE &&
+        // Ne pas verifier si la deconnexion a deja ete geree par handleDisconnectedScreen()
+        if (!disconnectionHandledThisTick &&
+            stateData.state != BotState.IDLE &&
             stateData.state != BotState.PAUSED &&
             stateData.state != BotState.DISCONNECTING &&
             stateData.state != BotState.ERROR) {
@@ -941,19 +972,26 @@ object BotCore {
 
                 // Verifier si on doit reprendre une session apres un crash
                 if (stateData.isCrashReconnectPause) {
-                    // Logger seulement une fois pour eviter le spam
                     if (!connectionSuccessLogged) {
                         logger.info("Connexion reussie - REPRISE de la session apres crash")
                         connectionSuccessLogged = true
                     }
                     resumeFarmingSession()
                 } else {
-                    // Logger seulement une fois pour eviter le spam
                     if (!connectionSuccessLogged) {
                         logger.info("Connexion automatique reussie - demarrage session farming")
                         connectionSuccessLogged = true
                     }
                     startFarmingSession()
+                }
+
+                // PROTECTION: Si startFarmingSession/resumeFarmingSession a retourne sans changer l'etat
+                // (ex: restart serveur, connexion perdue momentanement), planifier un retry dans 5s
+                // pour eviter une boucle infinie d'appels a chaque tick
+                if (stateData.state == BotState.CONNECTING) {
+                    logger.warn("Session non demarree apres connexion reussie - retry dans 5s")
+                    connectionRetryDelayTicks = 100  // 5 secondes
+                    ServerConnector.reset()  // Reset pour que isFinished() ne soit plus true
                 }
             } else {
                 // Erreur de connexion - toujours retenter (jamais abandonner)

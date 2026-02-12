@@ -1,12 +1,9 @@
 package fr.nix.agribot.bucket
 
 import fr.nix.agribot.AgriBotClient
-import fr.nix.agribot.action.ActionManager
 import fr.nix.agribot.chat.ChatListener
 import fr.nix.agribot.chat.ChatManager
 import fr.nix.agribot.inventory.InventoryManager
-import net.minecraft.client.MinecraftClient
-import net.minecraft.util.Hand
 import org.slf4j.LoggerFactory
 
 /**
@@ -169,75 +166,10 @@ object BucketManager {
         ChatManager.fillBuckets()
     }
 
-    // Constantes pour le delai adaptatif
-    private const val MIN_DELAY_MS = 500L      // Delai minimum entre seaux
-    private const val MAX_DELAY_MS = 10000L    // Delai maximum (10 secondes)
-    private const val CHECK_INTERVAL_MS = 100L // Intervalle de verification
-
-    /**
-     * Vide un seau d'eau dans la station (clic droit).
-     * Attend que le seau soit consomme avec un delai adaptatif.
-     * Le delai s'ajuste automatiquement selon le temps de reponse du serveur.
-     * Note: Le premier seau de la session est ignore pour le calcul du delai (lag initial).
-     * @return true si le seau a ete consomme, false si pas de seau disponible
-     */
-    fun pourWaterBucket(): Boolean {
-        if (!InventoryManager.isHoldingWaterBucket()) {
-            if (!selectWaterBucket()) {
-                return false
-            }
-        }
-
-        // Sauvegarder le nombre de seaux d'eau avant le clic
-        val waterBucketsBefore = InventoryManager.countWaterBucketsInHotbar()
-        val startTime = System.currentTimeMillis()
-
-        // Faire le clic droit
-        ActionManager.rightClick()
-
-        // Ajouter l'animation du bras pour que ca paraisse reel
-        MinecraftClient.getInstance().execute {
-            MinecraftClient.getInstance().player?.swingHand(Hand.MAIN_HAND)
-        }
-
-        // Attendre que le seau soit consomme (verification periodique)
-        var elapsed = 0L
-        while (elapsed < MAX_DELAY_MS) {
-            Thread.sleep(CHECK_INTERVAL_MS)
-            elapsed = System.currentTimeMillis() - startTime
-
-            val waterBucketsAfter = InventoryManager.countWaterBucketsInHotbar()
-
-            if (waterBucketsAfter < waterBucketsBefore) {
-                // Seau consomme avec succes
-                state.bucketsUsedThisStation++
-
-                // Ignorer le premier seau de la session pour le calcul du delai adaptatif
-                // (le premier seau a souvent un lag initial qui fausserait le calcul)
-                if (!state.firstBucketUsedThisSession) {
-                    state.firstBucketUsedThisSession = true
-                    logger.info("Premier seau de la session - delai ignore pour calibration (${elapsed}ms)")
-                } else {
-                    // Ajuster le delai adaptatif (avec une marge de securite de 20%)
-                    val newDelay = (elapsed * 1.2).toLong().coerceIn(MIN_DELAY_MS, MAX_DELAY_MS)
-                    if (newDelay != state.adaptiveDelayMs) {
-                        logger.info("Delai adaptatif ajuste: ${state.adaptiveDelayMs}ms -> ${newDelay}ms")
-                        state.adaptiveDelayMs = newDelay
-                    }
-                }
-
-                logger.debug("Seau vide en ${elapsed}ms (${state.bucketsUsedThisStation} cette station)")
-                return true
-            }
-        }
-
-        // Timeout atteint - le seau n'a pas ete consomme apres 10 secondes
-        // On augmente le delai au maximum et on continue quand meme
-        logger.warn("Seau non consomme apres ${MAX_DELAY_MS}ms - augmentation du delai")
-        state.adaptiveDelayMs = MAX_DELAY_MS
-        state.bucketsUsedThisStation++
-        return true
-    }
+    // NOTE: L'ancienne methode pourWaterBucket() a ete supprimee car elle utilisait
+    // Thread.sleep() sur le thread principal, ce qui gelait le jeu entier.
+    // Le remplissage d'eau est maintenant gere de maniere non-bloquante
+    // par handleFillingWater() dans BotCore.kt (machine d'etat par ticks).
 
     /**
      * Obtient le delai adaptatif actuel entre les seaux.
@@ -296,17 +228,30 @@ object BucketManager {
 
     /**
      * Verifie si une transition de mode seaux est necessaire.
-     * Verifie le nombre de seaux dans l'inventaire et ajuste selon la plage horaire:
+     * Verifie le nombre de seaux dans l'inventaire COMPLET et ajuste selon la plage horaire:
      * - Matin (6h30-11h30): doit avoir 1 seau, sinon deposer l'excedent
      * - Apres-midi/nuit: doit avoir 16 seaux, sinon recuperer du coffre
+     * Verifie aussi si la transition a deja ete effectuee pour la periode actuelle.
      */
     fun needsModeTransition(): Boolean {
         val currentMode = getCurrentMode()
+
+        // Verifier si la transition a deja ete effectuee pour la periode actuelle
+        val currentPeriod = config.getCurrentPeriod()
+        if (config.lastTransitionPeriod == currentPeriod) {
+            if (logger.isDebugEnabled) {
+                logger.debug("Transition deja effectuee pour la periode $currentPeriod")
+            }
+            return false
+        }
+
         refreshState()
-        val currentBuckets = state.totalBuckets
+        // Utiliser le comptage de l'inventaire COMPLET (hotbar + inventaire principal)
+        // car les seaux d'eau ne stackent pas et debordent dans l'inventaire principal
+        val currentBuckets = InventoryManager.countAllBucketsInFullInventory()
         val targetBuckets = getBucketsToKeep()
 
-        logger.info("Verification seaux: mode=$currentMode, actuels=$currentBuckets, cible=$targetBuckets")
+        logger.info("Verification seaux: mode=$currentMode, actuels=$currentBuckets (inventaire complet), cible=$targetBuckets, periode=$currentPeriod")
 
         return when (currentMode) {
             BucketMode.MORNING -> {
