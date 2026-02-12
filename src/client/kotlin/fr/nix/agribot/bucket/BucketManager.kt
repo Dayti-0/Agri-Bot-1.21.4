@@ -239,10 +239,22 @@ object BucketManager {
         // Verifier si la transition a deja ete effectuee pour la periode actuelle
         val currentPeriod = config.getCurrentPeriod()
         if (config.lastTransitionPeriod == currentPeriod) {
-            if (logger.isDebugEnabled) {
-                logger.debug("Transition deja effectuee pour la periode $currentPeriod")
+            // Verifier que le nombre de seaux est effectivement correct
+            // (le bot a pu etre redemarre avec un inventaire different)
+            val actualBuckets = InventoryManager.countAllBucketsInFullInventory()
+            val expectedBuckets = getBucketsToKeep()
+            val bucketsCorrect = when (currentMode) {
+                BucketMode.MORNING -> actualBuckets <= expectedBuckets
+                else -> actualBuckets >= expectedBuckets
             }
-            return false
+            if (bucketsCorrect) {
+                if (logger.isDebugEnabled) {
+                    logger.debug("Transition deja effectuee pour la periode $currentPeriod (seaux OK: $actualBuckets)")
+                }
+                return false
+            }
+            // Nombre de seaux incorrect malgre la transition sauvegardee - forcer re-transition
+            logger.info("Transition sauvegardee pour $currentPeriod mais seaux incorrects ($actualBuckets vs cible $expectedBuckets) - re-transition necessaire")
         }
 
         refreshState()
