@@ -82,6 +82,22 @@ object ServerConnector {
     private var reconnectAttempts = 0
     private const val MAX_RECONNECT_ATTEMPTS = 3
 
+    /** Etats qui necessitent une connexion active (joueur + network handler) */
+    private val STATES_REQUIRING_CONNECTION = setOf(
+        ConnectionState.SENDING_LOGIN,
+        ConnectionState.WAITING_AFTER_LOGIN,
+        ConnectionState.CHECKING_CAPTCHA,
+        ConnectionState.SELECTING_COMPASS,
+        ConnectionState.OPENING_COMPASS_MENU,
+        ConnectionState.WAITING_COMPASS_MENU,
+        ConnectionState.CLICKING_NETHERITE_AXE,
+        ConnectionState.WAITING_GAME_SERVER,
+        ConnectionState.TELEPORTING_MOVEMENT_HOME,
+        ConnectionState.WAITING_TELEPORT_MOVEMENT,
+        ConnectionState.MOVING_FORWARD,
+        ConnectionState.MOVING_BACKWARD
+    )
+
     /** Compteur pour les timeouts */
     private var waitCounter = 0
 
@@ -101,6 +117,9 @@ object ServerConnector {
 
     /** Flag pour eviter le spam du message "Connexion etablie" */
     private var connectionEstablishedLogged = false
+
+    /** Flag pour detecter le moment exact ou la connexion est etablie (pour le delai post-connexion) */
+    private var connectionDetectedForStabilization = false
 
     /**
      * Demarre le processus de connexion automatique.
@@ -156,6 +175,7 @@ object ServerConnector {
         menuJustOpened = false
         menuJustClosed = false
         connectionEstablishedLogged = false
+        connectionDetectedForStabilization = false
     }
 
     /**
@@ -177,6 +197,15 @@ object ServerConnector {
      * Appelee depuis BotCore.onTick() quand en etat CONNECTING.
      */
     fun onTick() {
+        // Verifier la connexion pour les etats qui necessitent un joueur connecte
+        // Si la connexion est perdue pendant ces etats, passer en erreur
+        if (state in STATES_REQUIRING_CONNECTION && !ChatManager.isConnected()) {
+            logger.warn("Connexion perdue pendant l'etat $state - passage en erreur")
+            errorMessage = "Connexion perdue pendant $state"
+            state = ConnectionState.ERROR
+            return
+        }
+
         when (state) {
             ConnectionState.IDLE -> { /* Rien */ }
             ConnectionState.SENDING_LOGIN -> handleSendingLogin()
@@ -437,15 +466,18 @@ object ServerConnector {
 
         // Verifier si on est connecte (player existe)
         if (ChatManager.isConnected()) {
-            // Logger seulement une fois pour eviter le spam
-            if (!connectionEstablishedLogged) {
-                logger.info("Connexion etablie - reprise du processus de login")
+            // Logger seulement une fois et reset le compteur pour le delai post-connexion
+            if (!connectionDetectedForStabilization) {
+                connectionDetectedForStabilization = true
+                waitCounter = 0  // Reset pour compter le delai APRES la connexion
+                logger.info("Connexion etablie - attente stabilisation avant login...")
                 connectionEstablishedLogged = true
             }
-            // Attendre un peu avant de renvoyer /login
-            if (waitCounter >= 40) { // 2 secondes de stabilisation
+            // Attendre 3 secondes APRES connexion detectee avant de renvoyer /login (anti-spam)
+            if (waitCounter >= 60) { // 3 secondes de stabilisation post-connexion
                 state = ConnectionState.SENDING_LOGIN
                 waitCounter = 0
+                connectionDetectedForStabilization = false
             }
         } else if (waitCounter >= 400) { // Timeout 20 secondes
             logger.warn("Timeout attente connexion")
@@ -589,6 +621,7 @@ object ServerConnector {
         state = ConnectionState.WAITING_RECONNECT
         waitCounter = 0
         connectionEstablishedLogged = false
+        connectionDetectedForStabilization = false
         ChatManager.showActionBar("Reconnexion dans 5s (anti-spam)...", "6")
 
         return true

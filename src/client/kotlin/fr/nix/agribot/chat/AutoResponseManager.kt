@@ -33,6 +33,14 @@ object AutoResponseManager {
     // - Pseudo » Message (format simple)
     private val CHAT_MESSAGE_REGEX = Regex("""([A-Za-z_][A-Za-z0-9_]*)[★☆⚡☠🌙✨🔥❄☢⭐]*\s*»\s*(.+)$""")
 
+    // Pseudos connus comme etant des messages systeme/serveur (pas des joueurs reels)
+    // Evite de repondre aux messages de bienvenue, login, etc.
+    private val SYSTEM_SENDERS = setOf(
+        "survivalworld", "sw", "server", "serveur", "system", "admin",
+        // Faux positifs courants des messages de bienvenue (regex match sur "venu »", "mail »", etc.)
+        "venu", "mail", "email"
+    )
+
     // Regex pour parser les messages de chat en mode solo/local
     // Format: < Pseudo> Message ou <Pseudo> Message
     private val SOLO_CHAT_MESSAGE_REGEX = Regex("""^<\s*(\S+)\s*>\s*(.+)$""")
@@ -609,6 +617,19 @@ object AutoResponseManager {
         if (serverMatch != null) {
             val sender = serverMatch.groupValues[1].trim()
             val content = serverMatch.groupValues[2].trim()
+
+            // Filtrer les faux positifs: messages systeme/serveur et pseudos invalides
+            if (sender.lowercase() in SYSTEM_SENDERS) {
+                logger.debug("Message systeme ignore: sender='$sender' (raw: '$message')")
+                return null
+            }
+
+            // Un pseudo Minecraft valide fait entre 3 et 16 caracteres
+            if (sender.length < 3 || sender.length > 16) {
+                logger.debug("Pseudo invalide ignore (longueur ${sender.length}): '$sender' (raw: '$message')")
+                return null
+            }
+
             logger.debug("Message parse: sender='$sender', content='$content' (raw: '$message')")
             return ChatContent(sender, content)
         }
