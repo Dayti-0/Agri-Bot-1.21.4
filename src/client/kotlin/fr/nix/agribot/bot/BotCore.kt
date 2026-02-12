@@ -333,6 +333,7 @@ object BotCore {
                 isFirstStationOfSession = true
                 consecutiveStationsWithoutMelon = 0  // Reset du compteur de validation recolte
                 isEarlyDisconnectDueToNoMelon = false
+                melonFoundThisSession = false
             }
 
             // Configurer la recuperation de seaux
@@ -369,6 +370,7 @@ object BotCore {
                 isFirstStationOfSession = true
                 consecutiveStationsWithoutMelon = 0
                 isEarlyDisconnectDueToNoMelon = false
+                melonFoundThisSession = false
             }
 
             // Configurer le depot de seaux excedentaires
@@ -399,6 +401,7 @@ object BotCore {
             isFirstStationOfSession = true  // Reinitialiser pour chaque nouvelle session
             consecutiveStationsWithoutMelon = 0  // Reset du compteur de validation recolte
             isEarlyDisconnectDueToNoMelon = false
+            melonFoundThisSession = false  // Reset pour cette session
         }
 
         val sessionType = if (isWaterOnly) "Remplissage eau" else "Session farming"
@@ -1254,6 +1257,19 @@ object BotCore {
             return
         }
 
+        // Reset des sous-etats pour la nouvelle station
+        // Garantit un etat propre meme apres une reprise ou une erreur
+        menuOpenStep = 0
+        menuOpenRetries = 0
+        menuOpenAttempts = 0
+        harvestingStep = 0
+        harvestingRetries = 0
+        plantingStep = 0
+        waterPouringStep = 0
+        waterPouringCheckCount = 0
+        refillingStep = 0
+        refillingCheckCount = 0
+
         val stationName = stations[stateData.currentStationIndex]
         val actionType = if (stateData.isWaterOnlySession) "Remplissage" else "Station"
         logger.info("$actionType ${stateData.currentStationIndex + 1}/${stations.size}: $stationName")
@@ -1262,10 +1278,11 @@ object BotCore {
         // Sauvegarder la position avant teleportation pour calculer la distance ensuite
         stateData.positionBeforeTeleport = client.player?.pos
 
-        // Teleportation
-        ChatManager.teleportToHome(stationName)
+        // Teleportation - reset la detection AVANT d'envoyer la commande
+        // pour eviter toute race condition avec la reponse du serveur
         ChatListener.resetTeleportDetection()
         teleportWaitRetries = 0  // Reset le compteur d'attente de teleportation
+        ChatManager.teleportToHome(stationName)
 
         stateData.state = BotState.WAITING_TELEPORT
         waitMs(config.delayAfterTeleport)
@@ -1474,6 +1491,7 @@ object BotCore {
                     harvestingStep = 1
                     harvestingRetries = 0
                     // Reset du compteur de stations sans melon car on a trouve un melon
+                    stateData.melonFoundThisSession = true
                     stateData.consecutiveStationsWithoutMelon = 0
                     waitMs(300)
                 } else {
@@ -1483,27 +1501,12 @@ object BotCore {
                         // Barreaux de fer sans melon = pas de pousse, on ferme directement
                         logger.info("Pas de melon mais barreaux de fer detectes - pas de recolte necessaire")
 
-                        // Incrementer le compteur de stations sans melon (seulement si c'est une session de recolte)
-                        if (!stateData.isWaterOnlySession) {
+                        // Incrementer le compteur de stations sans melon
+                        // UNIQUEMENT si un melon a deja ete trouve dans cette session
+                        // (au premier lancement, c'est normal qu'il n'y ait pas de melon - les graines n'ont pas pousse)
+                        if (!stateData.isWaterOnlySession && stateData.melonFoundThisSession) {
                             stateData.consecutiveStationsWithoutMelon++
                             logger.info("Stations consecutives sans melon: ${stateData.consecutiveStationsWithoutMelon}/${BotConstants.MAX_CONSECUTIVE_STATIONS_WITHOUT_MELON}")
-
-                            // Verifier si on a atteint le seuil
-                            if (stateData.consecutiveStationsWithoutMelon >= BotConstants.MAX_CONSECUTIVE_STATIONS_WITHOUT_MELON) {
-                                logger.warn("========================================")
-                                logger.warn("DETECTION: ${stateData.consecutiveStationsWithoutMelon} stations sans melon consecutives")
-                                logger.warn("Les plantes ne sont probablement pas pretes (crash serveur?)")
-                                logger.warn("Deconnexion anticipee - reconnexion dans ${BotConstants.EARLY_DISCONNECT_RECONNECT_DELAY_MINUTES}min")
-                                logger.warn("========================================")
-                                ChatManager.showActionBar("Plantes pas pretes - reconnexion dans ${BotConstants.EARLY_DISCONNECT_RECONNECT_DELAY_MINUTES}min", "e")
-                                stateData.isEarlyDisconnectDueToNoMelon = true
-                                // Fermer le menu et passer au vidage des seaux puis deconnexion
-                                ActionManager.pressEscape()
-                                waitMs(300)
-                                harvestingStep = 0
-                                stateData.state = BotState.EMPTYING_REMAINING_BUCKETS
-                                return
-                            }
                         }
                         harvestingStep = 2
                     } else {
@@ -1596,6 +1599,7 @@ object BotCore {
         if (MenuDetector.isMenuOpen()) {
             logger.warn("Menu ouvert detecte pendant remplissage eau - fermeture")
             ActionManager.closeScreen()
+            waterPouringStep = 0  // Reset pour reprendre proprement depuis le debut
             wait(4)  // Attendre que le menu soit ferme
             return
         }
@@ -1758,6 +1762,22 @@ object BotCore {
 
         val stationType = if (stateData.isWaterOnlySession) "Remplissage" else "Station"
         logger.info("$stationType terminee (${stateData.stationsCompleted}/${stateData.totalStations})")
+
+        // Verifier si les plantes ne sont pas pretes (stations consecutives sans melon)
+        // La verification se fait ICI (apres avoir complete la station: recolte + plantation + eau)
+        // au lieu de dans handleHarvesting() pour ne pas interrompre le cycle en cours
+        if (!stateData.isWaterOnlySession &&
+            stateData.consecutiveStationsWithoutMelon >= BotConstants.MAX_CONSECUTIVE_STATIONS_WITHOUT_MELON) {
+            logger.warn("========================================")
+            logger.warn("DETECTION: ${stateData.consecutiveStationsWithoutMelon} stations sans melon consecutives")
+            logger.warn("Les plantes ne sont probablement pas pretes (crash serveur?)")
+            logger.warn("Deconnexion anticipee - reconnexion dans ${BotConstants.EARLY_DISCONNECT_RECONNECT_DELAY_MINUTES}min")
+            logger.warn("========================================")
+            ChatManager.showActionBar("Plantes pas pretes - reconnexion dans ${BotConstants.EARLY_DISCONNECT_RECONNECT_DELAY_MINUTES}min", "e")
+            stateData.isEarlyDisconnectDueToNoMelon = true
+            stateData.state = BotState.EMPTYING_REMAINING_BUCKETS
+            return
+        }
 
         if (stateData.currentStationIndex >= stateData.totalStations) {
             // Toutes les stations terminees
@@ -2430,6 +2450,7 @@ object BotCore {
 
             // Reset du compteur pour la prochaine session
             stateData.consecutiveStationsWithoutMelon = 0
+            stateData.melonFoundThisSession = false
 
             // Passer en pause
             stateData.state = BotState.PAUSED
@@ -2546,6 +2567,7 @@ object BotCore {
             stateData.apply {
                 isEarlyDisconnectDueToNoMelon = false
                 consecutiveStationsWithoutMelon = 0
+                melonFoundThisSession = false
                 currentStationIndex = 0
                 stationsCompleted = 0
                 isFirstStationOfSession = true
