@@ -77,6 +77,15 @@ object BotConstants {
     /** Intervalle de verification periodique de la connexion (ticks) - 5 secondes */
     const val CONNECTION_CHECK_INTERVAL = 100
 
+    /** Nombre max de tentatives de reconnexion avant abandon (circuit breaker) */
+    const val MAX_CONNECTION_RETRIES = 20
+
+    /** Delai initial de retry (ticks) - 5 secondes */
+    const val INITIAL_RETRY_DELAY_TICKS = 100
+
+    /** Delai max de retry (ticks) - 5 minutes */
+    const val MAX_RETRY_DELAY_TICKS = 6000
+
     // ==================== GRAINES ====================
 
     /** Nombre de stacks de graines pour la hotbar */

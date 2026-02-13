@@ -145,10 +145,13 @@ object BotCore {
                     disconnectionHandledThisTick = true
 
                     if (currentState == BotState.CONNECTING) {
-                        // Pendant WAITING_GAME_SERVER, la deconnexion est NORMALE
-                        // (transfert proxy BungeeCord/Velocity) - ne pas reset
-                        if (ServerConnector.state == ConnectionState.WAITING_GAME_SERVER) {
-                            logger.info("Ecran deconnexion pendant transfert serveur (WAITING_GAME_SERVER) - ignore")
+                        // Pendant le transfert serveur ou la reconnexion TCP, la deconnexion est NORMALE
+                        // Ne pas interrompre ces etats sinon la reconnexion ne se fait jamais
+                        if (ServerConnector.state == ConnectionState.WAITING_GAME_SERVER ||
+                            ServerConnector.state == ConnectionState.WAITING_RECONNECT ||
+                            ServerConnector.state == ConnectionState.RECONNECTING ||
+                            ServerConnector.state == ConnectionState.WAITING_CONNECTION_ESTABLISHED) {
+                            logger.info("Ecran deconnexion pendant ${ServerConnector.state} - ignore (reconnexion en cours)")
                             // Fermer l'ecran de deconnexion mais ne pas reset le ServerConnector
                         } else {
                             // Deconnexion pendant la phase de connexion - reset ServerConnector
@@ -156,7 +159,7 @@ object BotCore {
                             logger.warn("Deconnexion detectee pendant la connexion (ServerConnector etat: ${ServerConnector.state}) - reset et retry")
                             ActionManager.releaseAllKeys()  // Relacher les touches (peut etre en mouvement)
                             ServerConnector.reset()
-                            connectionRetryDelayTicks = BotConstants.CONNECTION_RETRY_DELAY_TICKS
+                            connectionRetryDelayTicks = calculateRetryDelay()
                             // Rester en CONNECTING - le retry timer va se declencher
                         }
                     } else {
@@ -622,16 +625,19 @@ object BotCore {
                 ConnectionCheckResult.DISCONNECTED -> {
                     // Deconnexion detectee - gerer selon l'etat actuel
                     if (stateData.state == BotState.CONNECTING) {
-                        // Pendant WAITING_GAME_SERVER, la deconnexion breve est NORMALE
-                        // (transfert proxy BungeeCord/Velocity) - ne pas reset
-                        if (ServerConnector.state == ConnectionState.WAITING_GAME_SERVER) {
-                            logger.info("Deconnexion breve pendant transfert serveur (WAITING_GAME_SERVER) - comportement normal")
+                        // Pendant le transfert serveur ou la reconnexion TCP, la deconnexion est NORMALE
+                        // Ne pas interrompre ces etats sinon la reconnexion ne se fait jamais
+                        if (ServerConnector.state == ConnectionState.WAITING_GAME_SERVER ||
+                            ServerConnector.state == ConnectionState.WAITING_RECONNECT ||
+                            ServerConnector.state == ConnectionState.RECONNECTING ||
+                            ServerConnector.state == ConnectionState.WAITING_CONNECTION_ESTABLISHED) {
+                            logger.info("Deconnexion pendant ${ServerConnector.state} - comportement normal (reconnexion en cours)")
                         } else {
                             // Pendant la connexion: reset ServerConnector et planifier un retry
                             logger.warn("Deconnexion periodique detectee pendant CONNECTING (ServerConnector: ${ServerConnector.state}) - reset et retry")
                             ServerConnector.reset()
                             if (connectionRetryDelayTicks <= 0) {
-                                connectionRetryDelayTicks = BotConstants.CONNECTION_RETRY_DELAY_TICKS
+                                connectionRetryDelayTicks = calculateRetryDelay()
                             }
                         }
                     } else {
@@ -698,6 +704,16 @@ object BotCore {
      */
     private fun waitMs(ms: Int) {
         wait(BotConstants.msToTicks(ms))
+    }
+
+    /**
+     * Calcule le delai de retry avec backoff exponentiel.
+     * 5s, 10s, 20s, 40s, 80s, 160s, 300s (plafond 5 min).
+     */
+    private fun calculateRetryDelay(): Int {
+        val exponent = minOf(connectionRetryCount, 10)
+        val delay = BotConstants.INITIAL_RETRY_DELAY_TICKS * (1 shl exponent)
+        return minOf(delay, BotConstants.MAX_RETRY_DELAY_TICKS)
     }
 
     /**
@@ -960,8 +976,22 @@ object BotCore {
             if (connectionRetryDelayTicks <= 0) {
                 // Delai termine, relancer la connexion
                 connectionRetryCount++
+
+                // Circuit breaker: abandonner apres le max de tentatives
+                if (connectionRetryCount > BotConstants.MAX_CONNECTION_RETRIES) {
+                    logger.error("========================================")
+                    logger.error("RECONNEXION ABANDONNEE apres ${BotConstants.MAX_CONNECTION_RETRIES} tentatives")
+                    logger.error("Serveur: ${config.serverAddress}")
+                    logger.error("========================================")
+                    val errorContext = "Reconnexion abandonnee apres ${BotConstants.MAX_CONNECTION_RETRIES} tentatives vers ${config.serverAddress}"
+                    stateData.setError(errorContext, ErrorType.NETWORK_ERROR)
+                    ChatManager.showActionBar("Reconnexion abandonnee (${BotConstants.MAX_CONNECTION_RETRIES} tentatives)", "c")
+                    stateData.state = BotState.ERROR
+                    return
+                }
+
                 stateData.clearError()  // Effacer l'erreur precedente avant retry
-                logger.info("Retry connexion (tentative $connectionRetryCount)...")
+                logger.info("Retry connexion (tentative $connectionRetryCount/${BotConstants.MAX_CONNECTION_RETRIES})...")
                 ServerConnector.reset()
                 if (ChatManager.isConnected()) {
                     // Joueur encore sur le serveur, relancer startConnection
@@ -1007,16 +1037,17 @@ object BotCore {
                     ServerConnector.reset()  // Reset pour que isFinished() ne soit plus true
                 }
             } else {
-                // Erreur de connexion - toujours retenter (jamais abandonner)
+                // Erreur de connexion - retenter avec backoff exponentiel
                 val errorContext = "Connexion serveur '${config.serverAddress}' echouee: ${ServerConnector.errorMessage}"
                 logger.error(errorContext)
                 stateData.setError(errorContext, ErrorType.NETWORK_ERROR)
 
-                // Retenter apres le delai configurable (ne jamais abandonner)
-                val retryDelaySeconds = config.connectionRetryDelaySeconds
-                logger.info("Retry connexion dans $retryDelaySeconds secondes (tentative ${connectionRetryCount + 1})...")
+                // Backoff exponentiel: 5s, 10s, 20s, ... jusqu'a 5 min max
+                val retryDelay = calculateRetryDelay()
+                val retryDelaySeconds = retryDelay / 20
+                logger.info("Retry connexion dans ${retryDelaySeconds}s (tentative ${connectionRetryCount + 1}/${BotConstants.MAX_CONNECTION_RETRIES})...")
                 ChatManager.showActionBar("Echec connexion - retry dans ${retryDelaySeconds}s...", "e")
-                connectionRetryDelayTicks = config.getConnectionRetryDelayTicks()
+                connectionRetryDelayTicks = retryDelay
             }
         }
     }
