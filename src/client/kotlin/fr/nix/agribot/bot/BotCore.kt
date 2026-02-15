@@ -336,7 +336,8 @@ object BotCore {
         // et non pas seulement la hotbar, car les seaux d'eau ne stackent pas et debordent
         // dans l'inventaire principal quand il y en a plus de 9
         val fullInventoryBucketCount = InventoryManager.countAllBucketsInFullInventory()
-        val targetBuckets = config.targetBucketCount
+        // Utiliser la cible adaptee a l'heure (1 le matin, 16 l'apres-midi/soir)
+        val targetBuckets = BucketManager.getBucketsToKeep()
         val missingBuckets = targetBuckets - fullInventoryBucketCount
         // Seaux en EXCES = plus de 16 (maximum absolu) - c'est un BUG, pas une transition normale
         val excessBuckets = fullInventoryBucketCount - 16
@@ -506,7 +507,8 @@ object BotCore {
         // et non pas seulement la hotbar, car les seaux d'eau ne stackent pas et debordent
         // dans l'inventaire principal quand il y en a plus de 9
         val fullInventoryBucketCount = InventoryManager.countAllBucketsInFullInventory()
-        val targetBuckets = config.targetBucketCount
+        // Utiliser la cible adaptee a l'heure (1 le matin, 16 l'apres-midi/soir)
+        val targetBuckets = BucketManager.getBucketsToKeep()
         val missingBuckets = targetBuckets - fullInventoryBucketCount
         // Seaux en EXCES = plus de 16 (maximum absolu) - c'est un BUG
         val excessBuckets = fullInventoryBucketCount - 16
