@@ -158,6 +158,9 @@ object ServerConnector {
         waitCounter = 0
         errorMessage = ""
 
+        // Activer le buffering des messages pour ne pas perdre ceux recus pendant la connexion
+        AutoResponseManager.onConnectionStarting()
+
         ChatManager.showActionBar("Connexion automatique...", "6")
         return true
     }
@@ -635,6 +638,10 @@ object ServerConnector {
         waitCounter = 0
         connectionEstablishedLogged = false
         connectionDetectedForStabilization = false
+
+        // Activer le buffering des messages pour ne pas perdre ceux recus pendant la reconnexion
+        AutoResponseManager.onConnectionStarting()
+
         ChatManager.showActionBar("Reconnexion dans 5s (anti-spam)...", "6")
 
         return true

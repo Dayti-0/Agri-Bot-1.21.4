@@ -59,6 +59,17 @@ object AutoResponseManager {
     private val processedMessages = mutableSetOf<String>()
     private const val MAX_PROCESSED_MESSAGES = 100
 
+    // ============================================
+    // BUFFER PRE-CONNEXION
+    // ============================================
+    // Messages recus pendant la phase de connexion (avant ouverture de la fenetre de detection)
+    // Ils seront traites des que la fenetre s'ouvre
+    private data class BufferedMessage(val rawMessage: String, val timestamp: Long)
+    private val preConnectionBuffer = mutableListOf<BufferedMessage>()
+    private var isBufferingPreConnection = false
+    private const val MAX_BUFFER_AGE_MS = 30_000L  // 30 secondes max
+    private const val MAX_BUFFER_SIZE = 50
+
     // Vitesse de frappe simulee (caracteres par seconde)
     private const val TYPING_SPEED_MIN = 4.0  // Lent
     private const val TYPING_SPEED_MAX = 8.0  // Rapide
@@ -122,12 +133,38 @@ object AutoResponseManager {
     }
 
     /**
+     * Signale que le processus de connexion/reconnexion demarre.
+     * Active le buffering des messages pour ne pas les perdre pendant la connexion.
+     */
+    fun onConnectionStarting() {
+        isBufferingPreConnection = true
+        preConnectionBuffer.clear()
+        logger.info("Buffering pre-connexion active - les messages seront traites apres connexion")
+    }
+
+    /**
      * Signale que le joueur vient de se connecter au serveur de jeu.
      * Demarre la fenetre de detection de 2 minutes.
+     * Traite les messages bufferises pendant la phase de connexion.
      */
     fun onGameServerConnected() {
         connectionTimestamp = System.currentTimeMillis()
         processedMessages.clear()
+
+        // Traiter les messages bufferises pendant la connexion
+        if (preConnectionBuffer.isNotEmpty()) {
+            val now = System.currentTimeMillis()
+            val validMessages = preConnectionBuffer.filter { now - it.timestamp < MAX_BUFFER_AGE_MS }
+            if (validMessages.isNotEmpty()) {
+                logger.info("Traitement de ${validMessages.size} message(s) bufferise(s) pendant la connexion")
+                for (buffered in validMessages) {
+                    processMessage(buffered.rawMessage)
+                }
+            }
+        }
+        preConnectionBuffer.clear()
+        isBufferingPreConnection = false
+
         logger.info("Fenetre de detection auto-reponse activee pour ${AutoResponseConfig.get().detectionWindowSeconds}s")
         ChatManager.showLocalMessage("Auto-reponse active (${AutoResponseConfig.get().detectionWindowSeconds}s)", "a")
     }
@@ -182,7 +219,17 @@ object AutoResponseManager {
         }
 
         // Mode normal: verifier qu'on est dans la fenetre de detection
-        if (!isInDetectionWindow()) return
+        if (!isInDetectionWindow()) {
+            // Si on est en phase de connexion, bufferiser le message pour traitement ulterieur
+            if (isBufferingPreConnection) {
+                preConnectionBuffer.add(BufferedMessage(rawMessage, System.currentTimeMillis()))
+                if (preConnectionBuffer.size > MAX_BUFFER_SIZE) {
+                    preConnectionBuffer.removeAt(0)
+                }
+                logger.debug("Message bufferise pendant connexion: ${rawMessage.take(80)}")
+            }
+            return
+        }
 
         // Le contenu doit etre valide
         if (chatContent == null) return
@@ -761,6 +808,8 @@ object AutoResponseManager {
         conversationHistory.clear()
         recentResponses.clear()
         pendingIncomingMessages.clear()
+        preConnectionBuffer.clear()
+        isBufferingPreConnection = false
     }
 
     // ============================================
